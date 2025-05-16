@@ -152,7 +152,7 @@ client.on('messageCreate', (msg) => {
     garages[userId].cars.push(activeDrop.car.name);
 
     const today = new Date();
-    const cutoff = new Date('2025-05-20T23:59:59');
+    const cutoff = new Date('2025-05-31T23:59:59');
     const garage = garages[userId].cars;
     if (today <= cutoff && requiredForNascar.every(c => garage.includes(c)) && !garage.includes(nascarUnlockCar)) {
       garage.push(nascarUnlockCar);
