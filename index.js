@@ -132,6 +132,8 @@ client.on('messageCreate', (msg) => {
   const userId = msg.author.id;
   const isAdmin = msg.member?.permissions?.has('Administrator');
 
+  console.log('User said:', msg.content);
+
   if (msg.content === '!drop') {
   if (!msg.member?.permissions?.has('Administrator')) {
     return msg.reply('❌ You don’t have permission to use this command.');
