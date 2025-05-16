@@ -132,7 +132,12 @@ client.on('messageCreate', (msg) => {
   const userId = msg.author.id;
   const isAdmin = msg.member?.permissions?.has('Administrator');
 
-  if (msg.content === '!drop') dropCar(msg.channel);
+  if (msg.content === '!drop') {
+  if (!msg.member?.permissions?.has('Administrator')) {
+    return msg.reply('❌ You don’t have permission to use this command.');
+  }
+  dropCar(msg.channel);
+}
 
   if (msg.content === '!claim') {
     if (!activeDrop) return msg.reply('❌ There\'s no car to claim right now.');
