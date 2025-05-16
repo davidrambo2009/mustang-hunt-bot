@@ -148,6 +148,20 @@ client.on('messageCreate', (msg) => {
     } else if (!Array.isArray(garages[userId].cars)) {
       garages[userId].cars = [];
     }
+if (msg.content === '!stats') {
+    const totalUsers = Object.keys(garages).length;
+    const totalCars = Object.values(garages).reduce((sum, g) => sum + g.cars.length, 0);
+
+    const uptime = process.uptime(); // in seconds
+    const hours = Math.floor(uptime / 3600);
+    const minutes = Math.floor((uptime % 3600) / 60);
+    const seconds = Math.floor(uptime % 60);
+
+    msg.reply(`📊 **Bot Stats**
+• 🧍 Users Registered: **${totalUsers}**
+• 🚗 Total Cars in Garages: **${totalCars}**
+• ⏱️ Uptime: **${hours}h ${minutes}m ${seconds}s**`);
+}
 
     activeDrop.claimed = true;
     clearTimeout(dropTimeout);
