@@ -230,6 +230,18 @@ client.on('messageCreate', (msg) => {
     garages[target.id] = { cars: [] };
     saveGarages();
     msg.reply(`♻️ Reset ${target.username}'s garage.`);
+    if (msg.content === '!backupgarage' && msg.author.id === '662453496825643028') {
+    const { AttachmentBuilder } = require('discord.js');
+    const fileBuffer = Buffer.from(JSON.stringify(garages, null, 2));
+    const attachment = new AttachmentBuilder(fileBuffer, { name: 'garage.json' });
+
+    try {
+      await msg.author.send({ content: '📦 Here is your garage backup file:', files: [attachment] });
+      msg.react('✅');
+    } catch (err) {
+      msg.reply('❌ I couldn’t DM you. Make sure your DMs are open.');
+    }
+  }
   }
 });
 
