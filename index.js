@@ -128,7 +128,7 @@ client.on('ready', () => {
   if (dropChannel) scheduleNextDrop(dropChannel);
 });
 
-client.on('messageCreate', (msg) => {
+client.on('messageCreate', async (msg) => {
   const userId = msg.author.id;
   const isAdmin = msg.member?.permissions?.has('Administrator');
 
