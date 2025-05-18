@@ -1,8 +1,11 @@
+// Required packages
 require('dotenv').config();
 require('./keepAlive');
 const fs = require('fs');
+const mongoose = require('mongoose');
 const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
 
+// Discord client setup
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -11,12 +14,27 @@ const client = new Client({
   ]
 });
 
+// Channels and files
 const DROP_CHANNEL_ID = '1372749024662257664';
 const GARAGE_CHANNEL_ID = '1372749137413668884';
-const garageFile = 'garage.json';
 
-let garages = fs.existsSync(garageFile) ? JSON.parse(fs.readFileSync(garageFile)) : {};
+// MongoDB setup
+mongoose.connect(process.env.MONGO_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true
+}).then(() => {
+  console.log('✅ Connected to MongoDB');
+}).catch(err => {
+  console.error('❌ MongoDB connection error:', err);
+});
 
+const garageSchema = new mongoose.Schema({
+  userId: String,
+  cars: [String]
+});
+const Garage = mongoose.model('Garage', garageSchema);
+
+// Rarity and car list
 const rarityColors = {
   'Common': 0xAAAAAA,
   'Uncommon': 0x00FF00,
@@ -58,10 +76,6 @@ const cars = [
 
 const nascarUnlockCar = '2022 Mustang NASCAR Cup Car';
 const requiredForNascar = ['2024 Mustang GT3', '2024 Mustang GT4', '2025 Mustang GTD'];
-
-function saveGarages() {
-  fs.writeFileSync(garageFile, JSON.stringify(garages, null, 2));
-}
 
 function getChanceFromRarity(level) {
   return 12 / level;
@@ -135,54 +149,51 @@ client.on('messageCreate', async (msg) => {
   console.log('User said:', msg.content);
 
   if (msg.content === '!drop') {
-  if (!msg.member?.permissions?.has('Administrator')) {
-    return msg.reply('❌ You don’t have permission to use this command.');
+    if (!msg.member?.permissions?.has('Administrator')) {
+      return msg.reply('❌ You don’t have permission to use this command.');
+    }
+    dropCar(msg.channel);
   }
-  dropCar(msg.channel);
-}
 
   if (msg.content === '!claim') {
     if (!activeDrop) return msg.reply('❌ There\'s no car to claim right now.');
     if (activeDrop.claimed) return msg.reply('⚠️ This car was already claimed.');
-
-    if (!garages[userId]) {
-      garages[userId] = { cars: [] };
-    } else if (!Array.isArray(garages[userId].cars)) {
-      garages[userId].cars = [];
-    }
 
     activeDrop.claimed = true;
     clearTimeout(dropTimeout);
     activeDrop.message.delete().catch(() => {});
     msg.channel.send(`${msg.author.username} has claimed the **${activeDrop.car.name}**! 🏁`);
 
-    garages[userId].cars.push(activeDrop.car.name);
+    let garage = await Garage.findOne({ userId });
+    if (!garage) garage = new Garage({ userId, cars: [] });
+    garage.cars.push(activeDrop.car.name);
 
-    const today = new Date();
-    const cutoff = new Date('2025-05-31T23:59:59');
-    const garage = garages[userId].cars;
-    if (today <= cutoff && requiredForNascar.every(c => garage.includes(c)) && !garage.includes(nascarUnlockCar)) {
-      garage.push(nascarUnlockCar);
+    const garageCars = garage.cars;
+    if (
+      new Date() <= new Date('2025-05-31T23:59:59') &&
+      requiredForNascar.every(c => garageCars.includes(c)) &&
+      !garageCars.includes(nascarUnlockCar)
+    ) {
+      garage.cars.push(nascarUnlockCar);
       msg.channel.send(`🎉 **${msg.author.username}** has unlocked the **${nascarUnlockCar}**!`);
     }
 
-    saveGarages();
+    await garage.save();
     activeDrop = null;
     scheduleNextDrop(msg.channel);
   }
-    if (msg.content === '!stats') {
-    const totalUsers = Object.keys(garages).length;
-    const totalCars = Object.values(garages).reduce((sum, g) => sum + g.cars.length, 0);
+
+  if (msg.content === '!stats') {
+    const allGarages = await Garage.find();
+    const totalUsers = allGarages.length;
+    const totalCars = allGarages.reduce((sum, g) => sum + g.cars.length, 0);
 
     const uptime = process.uptime();
     const hours = Math.floor(uptime / 3600);
     const minutes = Math.floor((uptime % 3600) / 60);
     const seconds = Math.floor(uptime % 60);
 
-    msg.reply(`📊 **Bot Stats**
-• 👥 Users Registered: **${totalUsers}**
-• 🚗 Total Cars in Garages: **${totalCars}**
-• ⏱️ Uptime: **${hours}h ${minutes}m ${seconds}s**`);
+    msg.reply(`📊 **Bot Stats**\n• 👥 Users Registered: **${totalUsers}**\n• 🚗 Total Cars in Garages: **${totalCars}**\n• ⏱️ Uptime: **${hours}h ${minutes}m ${seconds}s**`);
   }
 
   if (msg.content.startsWith('!garage')) {
@@ -191,23 +202,21 @@ client.on('messageCreate', async (msg) => {
     }
 
     const target = msg.mentions.users.first() || msg.author;
-    if (!garages[target.id]) garages[target.id] = { cars: [] };
-
-    const userGarage = garages[target.id].cars;
-
-    if (!Array.isArray(userGarage) || userGarage.length === 0) {
+    const garage = await Garage.findOne({ userId: target.id });
+    if (!garage || garage.cars.length === 0) {
       return msg.reply(target.id === msg.author.id ? '🚫 Your garage is empty.' : `🚫 ${target.username}'s garage is empty.`);
     }
 
+    const allGarages = await Garage.find();
     const globalCount = {};
-    for (const g of Object.values(garages)) {
+    for (const g of allGarages) {
       for (const car of g.cars) {
         globalCount[car] = (globalCount[car] || 0) + 1;
       }
     }
 
     const count = {};
-    const list = userGarage.map(car => {
+    const list = garage.cars.map(car => {
       count[car] = (count[car] || 0) + 1;
       const serial = count[car];
       const total = globalCount[car];
@@ -217,7 +226,7 @@ client.on('messageCreate', async (msg) => {
     }).join('\n');
 
     const embed = new EmbedBuilder()
-      .setTitle(target.id === msg.author.id ? `🚗 Your Garage (${userGarage.length} cars)` : `🚗 ${target.username}'s Garage`)
+      .setTitle(target.id === msg.author.id ? `🚗 Your Garage (${garage.cars.length} cars)` : `🚗 ${target.username}'s Garage`)
       .setDescription(list)
       .setColor(0x00BFFF);
 
@@ -227,21 +236,8 @@ client.on('messageCreate', async (msg) => {
   if (msg.content.startsWith('!resetgarage') && isAdmin) {
     const target = msg.mentions.users.first();
     if (!target) return msg.reply('❌ Tag a user to reset their garage.');
-    garages[target.id] = { cars: [] };
-    saveGarages();
+    await Garage.findOneAndUpdate({ userId: target.id }, { cars: [] }, { upsert: true });
     msg.reply(`♻️ Reset ${target.username}'s garage.`);
-    if (msg.content === '!backupgarage' && msg.author.id === '662453496825643028') {
-    const { AttachmentBuilder } = require('discord.js');
-    const fileBuffer = Buffer.from(JSON.stringify(garages, null, 2));
-    const attachment = new AttachmentBuilder(fileBuffer, { name: 'garage.json' });
-
-    try {
-      await msg.author.send({ content: '📦 Here is your garage backup file:', files: [attachment] });
-      msg.react('✅');
-    } catch (err) {
-      msg.reply('❌ I couldn’t DM you. Make sure your DMs are open.');
-    }
-  }
   }
 });
 
