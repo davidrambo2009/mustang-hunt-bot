@@ -154,7 +154,7 @@ client.once('ready', async () => {
     new SlashCommandBuilder().setName('claim').setDescription('Claim the currently dropped car'),
     new SlashCommandBuilder().setName('drop').setDescription('Force a drop').setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
     new SlashCommandBuilder().setName('garage').setDescription('View a garage').addUserOption(opt => opt.setName('user').setDescription('User to view')),
-    new SlashCommandBuilder().setName('resetgarage').setDescription('Reset a user's garage').addUserOption(opt => opt.setName('user').setDescription('User').setRequired(true)).setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+    new SlashCommandBuilder().setName('resetgarage').setDescription("Reset a user's garage").addUserOption(opt => opt.setName('user').setDescription('User').setRequired(true)).setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
     new SlashCommandBuilder().setName('stats').setDescription('View bot stats')
   ].map(cmd => cmd.toJSON());
 
@@ -220,8 +220,7 @@ client.on('interactionCreate', async (interaction) => {
         const total = globalCount[car];
         const meta = cars.find(c => c.name === car);
         return `${car} (#${serial} of ${total}) ${getRarityTag(meta)}`;
-      }).join('
-');
+      }).join('\n');'
 
       const embed = new EmbedBuilder()
         .setTitle(target.id === user.id ? `🚗 Your Garage (${garage.cars.length} cars)` : `🚗 ${target.username}'s Garage`)
@@ -274,8 +273,7 @@ client.on('interactionCreate', async (interaction) => {
       const total = globalCount[car];
       const meta = cars.find(c => c.name === car);
       return `${car} (#${serial} of ${total}) ${getRarityTag(meta)}`;
-    }).join('
-');
+    }).join('\n');
 
     const embed = new EmbedBuilder()
       .setTitle(`🚗 Your Garage (${garage.cars.length} cars) - Page ${p + 1}/${pages.length}`)
