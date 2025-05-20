@@ -220,7 +220,7 @@ client.on('interactionCreate', async (interaction) => {
         const total = globalCount[car];
         const meta = cars.find(c => c.name === car);
         return `${car} (#${serial} of ${total}) ${getRarityTag(meta)}`;
-      }).join('\n');'
+      }).join('\n');
 
       const embed = new EmbedBuilder()
         .setTitle(target.id === user.id ? `🚗 Your Garage (${garage.cars.length} cars)` : `🚗 ${target.username}'s Garage`)
