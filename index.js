@@ -1,6 +1,3 @@
-i asked chatgpt to fix what u did, THIS IS ALL U HAD TO DO:
-code:
-
 // ✅ Full working index.js for Mustang Hunt bot
 // Includes: All cars, drop/claim, slash commands, pagination, stats, NASCAR unlock
 
