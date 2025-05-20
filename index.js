@@ -1,11 +1,18 @@
-// Required packages
+i asked chatgpt to fix what u did, THIS IS ALL U HAD TO DO:
+code:
+
+// ✅ Full working index.js for Mustang Hunt bot
+// Includes: All cars, drop/claim, slash commands, pagination, stats, NASCAR unlock
+
 require('dotenv').config();
 require('./keepAlive');
-const fs = require('fs');
 const mongoose = require('mongoose');
-const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
+const {
+  Client, GatewayIntentBits, EmbedBuilder, REST, Routes,
+  SlashCommandBuilder, PermissionFlagsBits, ActionRowBuilder,
+  ButtonBuilder, ButtonStyle
+} = require('discord.js');
 
-// Discord client setup
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -14,36 +21,27 @@ const client = new Client({
   ]
 });
 
-// Channels and files
 const DROP_CHANNEL_ID = '1372749024662257664';
 const GARAGE_CHANNEL_ID = '1372749137413668884';
 
-// MongoDB setup
 mongoose.connect(process.env.MONGO_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true
-}).then(() => {
-  console.log('✅ Connected to MongoDB');
-}).catch(err => {
-  console.error('❌ MongoDB connection error:', err);
-});
+}).then(() => console.log('✅ Connected to MongoDB'))
+  .catch(err => console.error('❌ MongoDB connection error:', err));
 
-const garageSchema = new mongoose.Schema({
-  userId: String,
-  cars: [String]
-});
+const garageSchema = new mongoose.Schema({ userId: String, cars: [String] });
 const Garage = mongoose.model('Garage', garageSchema);
 
-// Rarity and car list
 const rarityColors = {
-  'Common': 0xAAAAAA,
-  'Uncommon': 0x00FF00,
-  'Rare': 0x0099FF,
-  'Epic': 0x8000FF,
-  'Legendary': 0xFFA500,
-  'Mythic': 0xFF0000,
+  Common: 0xAAAAAA,
+  Uncommon: 0x00FF00,
+  Rare: 0x0099FF,
+  Epic: 0x8000FF,
+  Legendary: 0xFFA500,
+  Mythic: 0xFF0000,
   'Ultra Mythic': 0x9900FF,
-  'Godly': 0xFFD700
+  Godly: 0xFFD700
 };
 
 const cars = [
@@ -65,17 +63,32 @@ const cars = [
   { name: '2023 Mustang EcoBoost', rarity: 'Common', rarityLevel: 1 },
   { name: '2023 Mustang Mach-E', rarity: 'Uncommon', rarityLevel: 3 },
   { name: '2022 Mustang Mach-E GT', rarity: 'Rare', rarityLevel: 5 },
-  { name: '2024 Mustang GT3', rarity: 'Legendary', rarityLevel: 9 },
-  { name: '2024 Mustang GT4', rarity: 'Epic', rarityLevel: 7 },
-  { name: '2025 Mustang GTD', rarity: 'Legendary', rarityLevel: 9 },
+  { name: '2024 Mustang GT3', rarity: 'Legendary', rarityLevel: 5 },
+  { name: '2024 Mustang GT4', rarity: 'Epic', rarityLevel: 4 },
+  { name: '2025 Mustang GTD', rarity: 'Legendary', rarityLevel: 5 },
   { name: '2000 SVT Cobra', rarity: 'Rare', rarityLevel: 5 },
   { name: '2004 SVT Cobra', rarity: 'Epic', rarityLevel: 7 },
   { name: '2000 SVT Cobra R', rarity: 'Ultra Mythic', rarityLevel: 11 },
-  { name: 'Cobra Jet Mustang', rarity: 'Godly', rarityLevel: 12 }
+  { name: 'Cobra Jet Mustang', rarity: 'Godly', rarityLevel: 12 },
+  { name: '1964 Mustang Coupe', rarity: 'Common', rarityLevel: 1 },
+  { name: '1965 Shelby GT350R', rarity: 'Legendary', rarityLevel: 9 },
+  { name: '1966 Mustang GT350', rarity: 'Rare', rarityLevel: 5 },
+  { name: '1967 Shelby GT500', rarity: 'Godly', rarityLevel: 12 },
+  { name: '1968 Shelby GT500KR', rarity: 'Epic', rarityLevel: 7 },
+  { name: '1969 Mustang Mach 1', rarity: 'Rare', rarityLevel: 5 },
+  { name: '1969 Boss 429', rarity: 'Ultra Mythic', rarityLevel: 11 },
+  { name: '1969 Shelby GT500', rarity: 'Legendary', rarityLevel: 9 },
+  { name: '1970 Boss 302', rarity: 'Rare', rarityLevel: 5 },
+  { name: '1971 Mustang Mach 1', rarity: 'Uncommon', rarityLevel: 3 },
+  { name: '1973 Mustang Convertible', rarity: 'Common', rarityLevel: 1 }
 ];
 
 const nascarUnlockCar = '2022 Mustang NASCAR Cup Car';
 const requiredForNascar = ['2024 Mustang GT3', '2024 Mustang GT4', '2025 Mustang GTD'];
+
+let activeDrop = null;
+let dropTimeout = null;
+const claimingUsers = new Set();
 
 function getChanceFromRarity(level) {
   return 12 / level;
@@ -88,14 +101,8 @@ function getRarityTag(car) {
   return `[${car.rarity.toUpperCase()}]`;
 }
 
-let activeDrop = null;
-let dropTimeout = null;
-
 function getRandomCar() {
-  const weighted = cars.map(car => ({
-    ...car,
-    chance: getChanceFromRarity(car.rarityLevel)
-  }));
+  const weighted = cars.map(car => ({ ...car, chance: getChanceFromRarity(car.rarityLevel) }));
   const total = weighted.reduce((acc, c) => acc + c.chance, 0);
   const roll = Math.random() * total;
   let sum = 0;
@@ -106,10 +113,14 @@ function getRandomCar() {
   return weighted[0];
 }
 
+function chunkArray(arr, size) {
+  const result = [];
+  for (let i = 0; i < arr.length; i += size) result.push(arr.slice(i, i + size));
+  return result;
+}
+
 function scheduleNextDrop(channel) {
-  const min = 10 * 60 * 1000;
-  const max = 45 * 60 * 1000;
-  const delay = Math.floor(Math.random() * (max - min + 1)) + min;
+  const delay = Math.floor(Math.random() * (45 - 10 + 1) + 10) * 60 * 1000;
   setTimeout(() => {
     if (!activeDrop) dropCar(channel);
   }, delay);
@@ -120,7 +131,8 @@ function dropCar(channel) {
   const car = getRandomCar();
   const embed = new EmbedBuilder()
     .setTitle(`🚗 A wild ${car.name} appeared!`)
-    .setDescription(`${getRarityTag(car)}\nType \`!claim\` within 1 minute to grab it!`)
+    .setDescription(`${getRarityTag(car)}
+Use \`/claim\` in 1 minute!`)
     .setColor(rarityColors[car.rarity] || 0xFFFFFF);
 
   channel.send({ embeds: [embed] }).then(msg => {
@@ -128,7 +140,7 @@ function dropCar(channel) {
     dropTimeout = setTimeout(() => {
       if (!activeDrop.claimed) {
         msg.delete().catch(() => {});
-        channel.send(`⏱️ The **${car.name}** disappeared — no one claimed it in time.`);
+        channel.send(`⏱️ The **${car.name}** disappeared.`);
       }
       activeDrop = null;
       scheduleNextDrop(channel);
@@ -136,108 +148,148 @@ function dropCar(channel) {
   });
 }
 
-client.on('ready', () => {
+client.once('ready', async () => {
   console.log(`🟢 Logged in as ${client.user.tag}`);
-  const dropChannel = client.channels.cache.get(DROP_CHANNEL_ID);
+  const dropChannel = await client.channels.fetch(DROP_CHANNEL_ID);
   if (dropChannel) scheduleNextDrop(dropChannel);
+
+  const commands = [
+    new SlashCommandBuilder().setName('claim').setDescription('Claim the currently dropped car'),
+    new SlashCommandBuilder().setName('drop').setDescription('Force a drop').setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+    new SlashCommandBuilder().setName('garage').setDescription('View a garage').addUserOption(opt => opt.setName('user').setDescription('User to view')),
+    new SlashCommandBuilder().setName('resetgarage').setDescription('Reset a user's garage').addUserOption(opt => opt.setName('user').setDescription('User').setRequired(true)).setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+    new SlashCommandBuilder().setName('stats').setDescription('View bot stats')
+  ].map(cmd => cmd.toJSON());
+
+  const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
+  await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
+  console.log('✅ Slash commands registered');
 });
 
-client.on('messageCreate', async (msg) => {
-  const userId = msg.author.id;
-  const isAdmin = msg.member?.permissions?.has('Administrator');
+client.on('interactionCreate', async (interaction) => {
+  if (interaction.isChatInputCommand()) {
+    const { commandName, user, channel, options, member } = interaction;
+    const userId = user.id;
 
-  console.log('User said:', msg.content);
-
-  if (msg.content === '!drop') {
-    if (!msg.member?.permissions?.has('Administrator')) {
-      return msg.reply('❌ You don’t have permission to use this command.');
-    }
-    dropCar(msg.channel);
-  }
-
-  if (msg.content === '!claim') {
-    if (!activeDrop) return msg.reply('❌ There\'s no car to claim right now.');
-    if (activeDrop.claimed) return msg.reply('⚠️ This car was already claimed.');
-
-    activeDrop.claimed = true;
-    clearTimeout(dropTimeout);
-    activeDrop.message.delete().catch(() => {});
-    msg.channel.send(`${msg.author.username} has claimed the **${activeDrop.car.name}**! 🏁`);
-
-    let garage = await Garage.findOne({ userId });
-    if (!garage) garage = new Garage({ userId, cars: [] });
-    garage.cars.push(activeDrop.car.name);
-
-    const garageCars = garage.cars;
-    if (
-      new Date() <= new Date('2025-05-31T23:59:59') &&
-      requiredForNascar.every(c => garageCars.includes(c)) &&
-      !garageCars.includes(nascarUnlockCar)
-    ) {
-      garage.cars.push(nascarUnlockCar);
-      msg.channel.send(`🎉 **${msg.author.username}** has unlocked the **${nascarUnlockCar}**!`);
-    }
-
-    await garage.save();
-    activeDrop = null;
-    scheduleNextDrop(msg.channel);
-  }
-
-  if (msg.content === '!stats') {
-    const allGarages = await Garage.find();
-    const totalUsers = allGarages.length;
-    const totalCars = allGarages.reduce((sum, g) => sum + g.cars.length, 0);
-
-    const uptime = process.uptime();
-    const hours = Math.floor(uptime / 3600);
-    const minutes = Math.floor((uptime % 3600) / 60);
-    const seconds = Math.floor(uptime % 60);
-
-    msg.reply(`📊 **Bot Stats**\n• 👥 Users Registered: **${totalUsers}**\n• 🚗 Total Cars in Garages: **${totalCars}**\n• ⏱️ Uptime: **${hours}h ${minutes}m ${seconds}s**`);
-  }
-
-  if (msg.content.startsWith('!garage')) {
-    if (msg.channel.id !== GARAGE_CHANNEL_ID) {
-      return msg.reply('❌ You can only use !garage in the designated garage channel.');
-    }
-
-    const target = msg.mentions.users.first() || msg.author;
-    const garage = await Garage.findOne({ userId: target.id });
-    if (!garage || garage.cars.length === 0) {
-      return msg.reply(target.id === msg.author.id ? '🚫 Your garage is empty.' : `🚫 ${target.username}'s garage is empty.`);
-    }
-
-    const allGarages = await Garage.find();
-    const globalCount = {};
-    for (const g of allGarages) {
-      for (const car of g.cars) {
-        globalCount[car] = (globalCount[car] || 0) + 1;
+    if (commandName === 'claim') {
+      if (!activeDrop) return interaction.reply({ content: '❌ No car to claim.', ephemeral: true });
+      if (activeDrop.claimed) return interaction.reply({ content: '⚠️ Already claimed.', ephemeral: true });
+      if (claimingUsers.has(userId)) return;
+      claimingUsers.add(userId);
+      try {
+        activeDrop.claimed = true;
+        clearTimeout(dropTimeout);
+        await activeDrop.message.delete().catch(() => {});
+        await channel.send(`${user.username} claimed **${activeDrop.car.name}**! 🏁`);
+        let garage = await Garage.findOne({ userId });
+        if (!garage) garage = new Garage({ userId, cars: [] });
+        garage.cars.push(activeDrop.car.name);
+        if (new Date() <= new Date('2025-05-31') && requiredForNascar.every(c => garage.cars.includes(c)) && !garage.cars.includes(nascarUnlockCar)) {
+          garage.cars.push(nascarUnlockCar);
+          await channel.send(`🎉 ${user.username} unlocked **${nascarUnlockCar}**!`);
+        }
+        await garage.save();
+        activeDrop = null;
+        scheduleNextDrop(channel);
+        await interaction.reply({ content: '✅ You claimed the car!', ephemeral: true });
+      } finally {
+        claimingUsers.delete(userId);
       }
     }
 
+    if (commandName === 'drop') {
+      if (!member.permissions.has(PermissionFlagsBits.Administrator)) return interaction.reply({ content: '❌ No permission.', ephemeral: true });
+      dropCar(channel);
+      return interaction.reply({ content: '🚗 Car dropped.', ephemeral: true });
+    }
+
+    if (commandName === 'garage') {
+      if (channel.id !== GARAGE_CHANNEL_ID) return interaction.reply({ content: '❌ Use /garage in the garage channel.', ephemeral: true });
+      const target = options.getUser('user') || user;
+      const garage = await Garage.findOne({ userId: target.id });
+      if (!garage || garage.cars.length === 0) return interaction.reply({ content: '🚫 Garage is empty.', ephemeral: true });
+
+      const all = await Garage.find();
+      const globalCount = {};
+      for (const g of all) for (const car of g.cars) globalCount[car] = (globalCount[car] || 0) + 1;
+
+      const pages = chunkArray(garage.cars, 10);
+      const count = {};
+      const page = 0;
+
+      const list = pages[page].map(car => {
+        count[car] = (count[car] || 0) + 1;
+        const serial = count[car];
+        const total = globalCount[car];
+        const meta = cars.find(c => c.name === car);
+        return `${car} (#${serial} of ${total}) ${getRarityTag(meta)}`;
+      }).join('
+');
+
+      const embed = new EmbedBuilder()
+        .setTitle(target.id === user.id ? `🚗 Your Garage (${garage.cars.length} cars)` : `🚗 ${target.username}'s Garage`)
+        .setDescription(list)
+        .setColor(0x00BFFF);
+
+      const row = new ActionRowBuilder();
+      if (pages.length > 1) row.addComponents(new ButtonBuilder().setCustomId(`garage:${target.id}:1`).setLabel('Next ➡️').setStyle(ButtonStyle.Secondary));
+      await interaction.reply({ embeds: [embed], components: row.components.length ? [row] : [], ephemeral: false });
+    }
+
+    if (commandName === 'resetgarage') {
+      const target = options.getUser('user');
+      if (!member.permissions.has(PermissionFlagsBits.Administrator)) return interaction.reply({ content: '❌ No permission.', ephemeral: true });
+      await Garage.findOneAndUpdate({ userId: target.id }, { cars: [] }, { upsert: true });
+      return interaction.reply({ content: `♻️ Reset ${target.username}'s garage.`, ephemeral: true });
+    }
+
+    if (commandName === 'stats') {
+      const all = await Garage.find();
+      const users = all.length;
+      const carsTotal = all.reduce((s, g) => s + g.cars.length, 0);
+      const up = process.uptime();
+      const h = Math.floor(up / 3600), m = Math.floor((up % 3600) / 60), s = Math.floor(up % 60);
+      await interaction.reply({ content: `📊 **Bot Stats**
+• 👥 Users: **${users}**
+• 🚗 Total Cars: **${carsTotal}**
+• ⏱️ Uptime: **${h}h ${m}m ${s}s**`, ephemeral: false });
+    }
+  }
+
+  if (interaction.isButton()) {
+    const [type, userId, page] = interaction.customId.split(':');
+    if (type !== 'garage' || interaction.user.id !== userId) return;
+
+    const garage = await Garage.findOne({ userId });
+    if (!garage || garage.cars.length === 0) return interaction.reply({ content: '🚫 Garage is empty.', ephemeral: true });
+
+    const all = await Garage.find();
+    const globalCount = {};
+    for (const g of all) for (const car of g.cars) globalCount[car] = (globalCount[car] || 0) + 1;
+
+    const pages = chunkArray(garage.cars, 10);
     const count = {};
-    const list = garage.cars.map(car => {
+    const p = parseInt(page);
+
+    const list = pages[p].map(car => {
       count[car] = (count[car] || 0) + 1;
       const serial = count[car];
       const total = globalCount[car];
-      const carData = cars.find(c => c.name === car);
-      const rarity = getRarityTag(carData);
-      return `${car} (#${serial} out of ${total}) ${rarity}`;
-    }).join('\n');
+      const meta = cars.find(c => c.name === car);
+      return `${car} (#${serial} of ${total}) ${getRarityTag(meta)}`;
+    }).join('
+');
 
     const embed = new EmbedBuilder()
-      .setTitle(target.id === msg.author.id ? `🚗 Your Garage (${garage.cars.length} cars)` : `🚗 ${target.username}'s Garage`)
+      .setTitle(`🚗 Your Garage (${garage.cars.length} cars) - Page ${p + 1}/${pages.length}`)
       .setDescription(list)
       .setColor(0x00BFFF);
 
-    msg.reply({ embeds: [embed] });
-  }
+    const row = new ActionRowBuilder();
+    if (p > 0) row.addComponents(new ButtonBuilder().setCustomId(`garage:${userId}:${p - 1}`).setLabel('⬅️ Prev').setStyle(ButtonStyle.Secondary));
+    if (p < pages.length - 1) row.addComponents(new ButtonBuilder().setCustomId(`garage:${userId}:${p + 1}`).setLabel('Next ➡️').setStyle(ButtonStyle.Secondary));
 
-  if (msg.content.startsWith('!resetgarage') && isAdmin) {
-    const target = msg.mentions.users.first();
-    if (!target) return msg.reply('❌ Tag a user to reset their garage.');
-    await Garage.findOneAndUpdate({ userId: target.id }, { cars: [] }, { upsert: true });
-    msg.reply(`♻️ Reset ${target.username}'s garage.`);
+    await interaction.update({ embeds: [embed], components: row.components.length ? [row] : [] });
   }
 });
 
