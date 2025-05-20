@@ -188,7 +188,7 @@ client.on('interactionCreate', async (interaction) => {
         await garage.save();
         activeDrop = null;
         scheduleNextDrop(channel);
-        await interaction.reply({ content: '✅ You claimed the car!', ephemeral: true });
+        await interaction.reply({ content: '✅ You claimed the car!', flags: 64 });
       } finally {
         claimingUsers.delete(userId);
       }
