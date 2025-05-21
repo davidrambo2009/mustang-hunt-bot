@@ -25,10 +25,15 @@ const client = new Client({
   ]
 });
 
+// ----- UPDATED CHANNEL IDs ----- 
 const DROP_CHANNEL_ID = '1372749024662257664';
 const GARAGE_CHANNEL_ID = '1372749137413668884';
-const TRADEBOARD_CHANNEL_ID = '1374486602012692581';
+const TRADE_POSTS_CHANNEL_ID = '1374486602012692581'; // Renamed from TRADEBOARD_CHANNEL_ID to TRADE_POSTS_CHANNEL_ID
 const TRADEOFFERS_CHANNEL_ID = '1374486704387264512';
+const TRADE_COMMAND_CHANNEL_ID = '1374623379406979134'; // new trade-commands channel for /trade
+
+// ---- GUILD ID ----
+const GUILD_ID = '1370450475400302686';
 
 mongoose.connect(process.env.MONGO_URI, {
   useNewUrlParser: true,
@@ -122,7 +127,6 @@ let dropTimeout = null;
 const claimingUsers = new Set();
 const claimCooldowns = new Map();
 
-// --- Utility Functions ---
 function getChanceFromRarity(level) {
   return 12 / level;
 }
@@ -183,7 +187,6 @@ function renderGaragePage(garage, globalCount, pageIndex, user, userId, carsMeta
   return { embed, components: row.components.length ? [row] : [] };
 }
 
-// --- Drop Logic ---
 function scheduleNextDrop(channel) {
   const delay = Math.floor(Math.random() * (45 - 10 + 1) + 10) * 60 * 1000;
   setTimeout(() => {
@@ -212,7 +215,6 @@ Use \`/claim\` in 1 minute!`)
   });
 }
 
-// --- On Ready ---
 client.once('ready', async () => {
   log(`🟢 Logged in as ${client.user.tag}`);
   try {
@@ -222,8 +224,7 @@ client.once('ready', async () => {
     log('❌ Error fetching drop channel: ' + e);
   }
 
-  // Use per-guild registration for instant updates
-  const GUILD_ID = '1370450475400302686'; // <- Replace with your server's ID!
+  // ---- SLASH COMMANDS REGISTRATION ----
   const commands = [
     new SlashCommandBuilder().setName('claim').setDescription('Claim the currently dropped car'),
     new SlashCommandBuilder().setName('drop').setDescription('Force a drop').setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
@@ -236,6 +237,9 @@ client.once('ready', async () => {
     new SlashCommandBuilder()
       .setName('canceltrade')
       .setDescription('Cancel all your active trade listings'),
+    new SlashCommandBuilder()
+      .setName('help')
+      .setDescription('Show help information for all commands'),
   ].map(cmd => cmd.toJSON());
 
   try {
@@ -250,15 +254,69 @@ client.once('ready', async () => {
   }
 });
 
-// --- Main Interaction Handler ---
 client.on('interactionCreate', async (interaction) => {
-  // --- Slash Commands ---
   if (interaction.isChatInputCommand()) {
     const { commandName, user, channel, options, member } = interaction;
     const userId = user.id;
 
+    // ==== /help ====
+    if (commandName === 'help') {
+      const embed = new EmbedBuilder()
+        .setTitle('🚦 Mustang Hunt Bot Help')
+        .setDescription("Here's a list of all available commands and what they do:")
+        .addFields(
+          {
+            name: '/claim',
+            value: 'Claim the currently dropped car. Only works when a drop is active. Cooldown applies.'
+          },
+          {
+            name: '/drop',
+            value: 'Force a car drop. **Administrator only.**'
+          },
+          {
+            name: '/garage [user]',
+            value: `View your garage or another user's garage. Only works in <#${GARAGE_CHANNEL_ID}>.`
+          },
+          {
+            name: '/resetgarage <user>',
+            value: 'Reset a user\'s garage. **Administrator only.**'
+          },
+          {
+            name: '/stats',
+            value: 'View bot statistics (users, cars, uptime).'
+          },
+          {
+            name: '/trade',
+            value: `List a car from your garage for trade. **Use this command in <#${TRADE_COMMAND_CHANNEL_ID}>.** You'll select the car and can add a note. The listing will appear in <#${TRADE_POSTS_CHANNEL_ID}>.`
+          },
+          {
+            name: '/canceltrade',
+            value: 'Cancel all your active trade listings.'
+          },
+          {
+            name: '/help',
+            value: 'Show this help message.'
+          }
+        )
+        .setFooter({ text: 'Tip: Use /trade only in the trade-commands channel; listings appear in #trade-posts.' })
+        .setColor(0x00BFFF);
+
+      return interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    // ==== /trade channel restriction ====
+    if (commandName === 'trade') {
+      if (interaction.channel.id !== TRADE_COMMAND_CHANNEL_ID) {
+        return interaction.reply({
+          content: `❌ Please use this command in <#${TRADE_COMMAND_CHANNEL_ID}>.`,
+          ephemeral: true
+        });
+      }
+    }
+
+    // --- The rest of your unchanged command bodies ---
+
     if (commandName === 'claim') {
-      // Cooldown check
       const now = Date.now();
       if (claimCooldowns.has(userId) && (now - claimCooldowns.get(userId)) < 10000) {
         return interaction.reply({ content: '⏳ You must wait 10 seconds between claims.', ephemeral: true });
@@ -331,7 +389,7 @@ client.on('interactionCreate', async (interaction) => {
         if (!listings.length) return interaction.reply({ content: '🚫 No active listings found.', ephemeral: true });
 
         for (const listing of listings) {
-          const channel = await client.channels.fetch(TRADEBOARD_CHANNEL_ID);
+          const channel = await client.channels.fetch(TRADE_POSTS_CHANNEL_ID);
           try {
             const msg = await channel.messages.fetch(listing.messageId);
             await msg.edit({ components: [] });
@@ -437,7 +495,7 @@ client.on('interactionCreate', async (interaction) => {
       const activeListings = await TradeListing.countDocuments({ userId, active: true });
       if (activeListings >= 3) return interaction.reply({ content: '⚠️ You already have 3 active listings.', ephemeral: true });
 
-      const tradeChannel = await client.channels.fetch(TRADEBOARD_CHANNEL_ID);
+      const tradeChannel = await client.channels.fetch(TRADE_POSTS_CHANNEL_ID);
       const embed = new EmbedBuilder()
         .setTitle(`👤 ${interaction.user.username} is offering:`)
         .setDescription(`🚗 **${carName}** (#${serial})\n📝 ${note || 'No message'}\n⏳ Expires in 3 hours`)
@@ -469,7 +527,7 @@ client.on('interactionCreate', async (interaction) => {
         }
       }, 3 * 60 * 60 * 1000);
 
-      await interaction.reply({ content: '✅ Trade listing posted to #tradeboard!', ephemeral: true });
+      await interaction.reply({ content: `✅ Trade listing posted to <#${TRADE_POSTS_CHANNEL_ID}>!`, ephemeral: true });
     } catch (error) {
       log(`DB ERROR in tradeNoteModal: ${error}`);
       await interaction.reply({ content: '❌ An error occurred. Please try again later.', ephemeral: true });
