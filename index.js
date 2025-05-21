@@ -589,6 +589,10 @@ client.on('interactionCreate', async (interaction) => {
       }
 
       if (action === 'sendOffer') {
+        // Prevent sending offers to yourself
+  if (interaction.user.id === userId) {
+    return interaction.reply({ content: "❌ You can't send an offer to yourself.", ephemeral: true });
+  }
         const fromGarage = await Garage.findOne({ userId: interaction.user.id });
         if (!fromGarage || fromGarage.cars.length === 0)
           return interaction.reply({ content: '🚫 You have no cars to offer.', flags: 64 });
