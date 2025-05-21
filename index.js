@@ -534,7 +534,6 @@ if (action === 'declineOffer') {
   await TradeOffer.updateOne({ messageId: interaction.message.id }, { status: 'declined' });
   await interaction.update({ content: '❌ Trade declined.', components: [] });
 }
-  }
 
 function calculateGlobalCounts(garages) {
   const globalCount = {};
