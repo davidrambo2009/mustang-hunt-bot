@@ -223,7 +223,7 @@ client.once('ready', async () => {
   }
 
   // Use per-guild registration for instant updates
-  const GUILD_ID = 'YOUR_GUILD_ID'; // <- Replace with your server's ID!
+  const GUILD_ID = '1370450475400302686'; // <- Replace with your server's ID!
   const commands = [
     new SlashCommandBuilder().setName('claim').setDescription('Claim the currently dropped car'),
     new SlashCommandBuilder().setName('drop').setDescription('Force a drop').setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
