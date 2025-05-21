@@ -10,7 +10,6 @@ const {
   REST, Routes
 } = require('discord.js');
 
-// ---- Persistent logging ----
 const logStream = fs.createWriteStream('bot.log', { flags: 'a' });
 function log(message) {
   const time = new Date().toISOString();
@@ -26,21 +25,78 @@ const client = new Client({
   ]
 });
 
-// ----- CHANNEL IDs -----
 const DROP_CHANNEL_ID = '1372749024662257664';
 const GARAGE_CHANNEL_ID = '1372749137413668884';
 const TRADE_POSTS_CHANNEL_ID = '1374486602012692581';
 const TRADEOFFERS_CHANNEL_ID = '1374486704387264512';
 const TRADE_COMMAND_CHANNEL_ID = '1374623379406979134';
-
-// ---- GUILD ID ----
 const GUILD_ID = '1370450475400302686';
 
-mongoose.connect(process.env.MONGO_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true
-}).then(() => log('✅ Connected to MongoDB'))
-  .catch(err => log('❌ MongoDB connection error: ' + err));
+const garageSchema = new mongoose.Schema({
+  userId: String,
+  cars: [{ name: String, serial: Number }]
+});
+const Garage = mongoose.model('Garage', garageSchema);
+
+const tradeListingSchema = new mongoose.Schema({
+  // ... rest of your trade schema ...
+});
+
+(async () => {
+  try {
+    await mongoose.connect(process.env.MONGO_URI, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true
+    });
+    log('✅ Connected to MongoDB');
+
+    if (process.env.RUN_MIGRATION === 'true') {
+      try {
+        const allGarages = await Garage.find();
+        let totalChanged = 0;
+        for (const garage of allGarages) {
+          let changed = false;
+          for (let i = 0; i < garage.cars.length; i++) {
+            let car = garage.cars[i];
+            if (typeof car === 'string') {
+              garage.cars[i] = { name: car, serial: 1 };
+              changed = true;
+              continue;
+            }
+            if (!car) {
+              garage.cars[i] = { name: "Unknown Car", serial: 1 };
+              changed = true;
+              continue;
+            }
+            if (!car.name) {
+              garage.cars[i].name = "Unknown Car";
+              changed = true;
+            }
+            if (typeof car.serial !== 'number') {
+              garage.cars[i].serial = 1;
+              changed = true;
+            }
+          }
+          if (changed) {
+            await garage.save();
+            console.log(`Updated garage for user ${garage.userId}`);
+            totalChanged++;
+          }
+        }
+        console.log(`✅ Migration complete! Updated ${totalChanged} garages.`);
+        process.exit(0);
+      } catch (err) {
+        console.error('Migration failed:', err);
+        process.exit(1);
+      }
+    }
+
+    // ...rest of your bot startup code goes here...
+
+  } catch (err) {
+    log('❌ MongoDB connection error: ' + err);
+  }
+})();
 
 const garageSchema = new mongoose.Schema({
   userId: String,
