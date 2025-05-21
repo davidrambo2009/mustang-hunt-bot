@@ -492,13 +492,14 @@ client.on('interactionCreate', async (interaction) => {
     const note = interaction.fields.getTextInputValue('tradeNote') || '';
     try {
       const userId = interaction.user.id;
+      // Now allows up to 5 active listings
       const activeListings = await TradeListing.countDocuments({ userId, active: true });
-      if (activeListings >= 3) return interaction.reply({ content: '⚠️ You already have 3 active listings.', ephemeral: true });
+      if (activeListings >= 5) return interaction.reply({ content: '⚠️ You already have 5 active listings.', ephemeral: true });
 
       const tradeChannel = await client.channels.fetch(TRADE_POSTS_CHANNEL_ID);
       const embed = new EmbedBuilder()
         .setTitle(`👤 ${interaction.user.username} is offering:`)
-        .setDescription(`🚗 **${carName}** (#${serial})\n📝 ${note || 'No message'}\n⏳ Expires in 3 hours`)
+        .setDescription(`🚗 **${carName}** (#${serial})\n📝 ${note || 'No message'}\n⏳ Expires in 6 hours`)
         .setColor(0x00AAFF);
 
       const row = new ActionRowBuilder().addComponents(
@@ -517,6 +518,7 @@ client.on('interactionCreate', async (interaction) => {
         messageId: msg.id
       }).save();
 
+      // listing disappears after 6 hours
       setTimeout(async () => {
         try {
           await TradeListing.findOneAndUpdate({ messageId: msg.id }, { active: false });
@@ -525,7 +527,7 @@ client.on('interactionCreate', async (interaction) => {
         } catch (err) {
           log(`Failed to update trade message (timeout): ${err}`);
         }
-      }, 3 * 60 * 60 * 1000);
+      }, 6 * 60 * 60 * 1000);
 
       await interaction.reply({ content: `✅ Trade listing posted to <#${TRADE_POSTS_CHANNEL_ID}>!`, ephemeral: true });
     } catch (error) {
@@ -590,9 +592,10 @@ client.on('interactionCreate', async (interaction) => {
 
       if (action === 'sendOffer') {
         // Prevent sending offers to yourself
-  if (interaction.user.id === userId) {
-    return interaction.reply({ content: "❌ You can't send an offer to yourself.", ephemeral: true });
-  }
+        if (interaction.user.id === userId) {
+          return interaction.reply({ content: "❌ You can't send an offer to yourself.", ephemeral: true });
+        }
+
         const fromGarage = await Garage.findOne({ userId: interaction.user.id });
         if (!fromGarage || fromGarage.cars.length === 0)
           return interaction.reply({ content: '🚫 You have no cars to offer.', flags: 64 });
