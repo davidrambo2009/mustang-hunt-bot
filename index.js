@@ -20,6 +20,8 @@ const client = new Client({
 
 const DROP_CHANNEL_ID = '1372749024662257664';
 const GARAGE_CHANNEL_ID = '1372749137413668884';
+const TRADEBOARD_CHANNEL_ID = '1374486602012692581';
+const TRADEOFFERS_CHANNEL_ID = '1374486704387264512';
 
 mongoose.connect(process.env.MONGO_URI, {
   useNewUrlParser: true,
@@ -27,8 +29,33 @@ mongoose.connect(process.env.MONGO_URI, {
 }).then(() => console.log('✅ Connected to MongoDB'))
   .catch(err => console.error('❌ MongoDB connection error:', err));
 
-const garageSchema = new mongoose.Schema({ userId: String, cars: [String] });
+const garageSchema = new mongoose.Schema({
+  userId: String,
+  cars: [{ name: String, serial: Number }]
+});
 const Garage = mongoose.model('Garage', garageSchema);
+
+const tradeListingSchema = new mongoose.Schema({
+  userId: String,
+  car: { name: String, serial: Number },
+  note: String,
+  timestamp: { type: Date, default: Date.now },
+  active: { type: Boolean, default: true },
+  messageId: String
+});
+const TradeListing = mongoose.model('TradeListing', tradeListingSchema);
+
+const tradeOfferSchema = new mongoose.Schema({
+  fromUserId: String,
+  toUserId: String,
+  offeredCar: { name: String, serial: Number },
+  requestedCar: { name: String, serial: Number },
+  message: String,
+  timestamp: { type: Date, default: Date.now },
+  status: { type: String, enum: ['pending', 'accepted', 'declined'], default: 'pending' },
+  messageId: String
+});
+const TradeOffer = mongoose.model('TradeOffer', tradeOfferSchema);
 
 const rarityColors = {
   Common: 0xAAAAAA,
@@ -150,13 +177,21 @@ client.once('ready', async () => {
   const dropChannel = await client.channels.fetch(DROP_CHANNEL_ID);
   if (dropChannel) scheduleNextDrop(dropChannel);
 
-  const commands = [
+    const commands = [
     new SlashCommandBuilder().setName('claim').setDescription('Claim the currently dropped car'),
     new SlashCommandBuilder().setName('drop').setDescription('Force a drop').setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
     new SlashCommandBuilder().setName('garage').setDescription('View a garage').addUserOption(opt => opt.setName('user').setDescription('User to view')),
     new SlashCommandBuilder().setName('resetgarage').setDescription("Reset a user's garage").addUserOption(opt => opt.setName('user').setDescription('User').setRequired(true)).setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-    new SlashCommandBuilder().setName('stats').setDescription('View bot stats')
-  ].map(cmd => cmd.toJSON());
+    new SlashCommandBuilder().setName('stats').setDescription('View bot stats'),
+    new SlashCommandBuilder()
+      .setName('trade')
+      .setDescription('List a car for trade')
+      .addStringOption(opt => opt.setName('car').setDescription('Exact car name with serial (e.g. 2025 GT350 #2)').setRequired(true))
+      .addStringOption(opt => opt.setName('note').setDescription('Optional trade note')),
+    new SlashCommandBuilder()
+      .setName('canceltrade')
+      .setDescription('Cancel all your active trade listings')
+  ];
 
   const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
   await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
@@ -180,10 +215,93 @@ client.on('interactionCreate', async (interaction) => {
         await channel.send(`${user.username} claimed **${activeDrop.car.name}**! 🏁`);
         let garage = await Garage.findOne({ userId });
         if (!garage) garage = new Garage({ userId, cars: [] });
-        garage.cars.push(activeDrop.car.name);
-        if (new Date() <= new Date('2025-05-31') && requiredForNascar.every(c => garage.cars.includes(c)) && !garage.cars.includes(nascarUnlockCar)) {
-          garage.cars.push(nascarUnlockCar);
+        const carCount = garage.cars.filter(c => c.name === activeDrop.car.name).length;
+garage.cars.push({ name: activeDrop.car.name, serial: carCount + 1 });
+        if (
+  new Date() <= new Date('2025-05-31') &&
+  requiredForNascar.every(req => garage.cars.some(c => c.name === req)) &&
+  !garage.cars.some(c => c.name === nascarUnlockCar)
+) {
+  garage.cars.push({ name: nascarUnlockCar, serial: 1 });
+  await channel.send(`🎉 ${user.username} unlocked **${nascarUnlockCar}**!`);
+}
+          
           await channel.send(`🎉 ${user.username} unlocked **${nascarUnlockCar}**!`);
+          // ----- /trade command -----
+if (commandName === 'trade') {
+  const carInput = options.getString('car');
+  const note = options.getString('note') || 'No message';
+  const match = carInput.match(/(.+?)\s+#(\d+)/);
+  if (!match) return interaction.reply({ content: '⚠️ Format must be: Car Name #Serial (e.g. 2025 GT350 #2)', ephemeral: true });
+
+  const [, carName, serialStr] = match;
+  const serial = parseInt(serialStr);
+  const garage = await Garage.findOne({ userId });
+  if (!garage || garage.cars.length === 0) return interaction.reply({ content: '🚫 Your garage is empty.', ephemeral: true });
+
+  const count = {};
+  let matchSerial = null;
+  for (const car of garage.cars) {
+    count[car.name] = (count[car.name] || 0) + 1;
+    if (car.name === carName && count[car.name] === serial) {
+      matchSerial = serial;
+      break;
+    }
+  }
+  if (!matchSerial) return interaction.reply({ content: '🚫 You do not own that serial.', ephemeral: true });
+
+  const activeListings = await TradeListing.countDocuments({ userId, active: true });
+  if (activeListings >= 3) return interaction.reply({ content: '⚠️ You already have 3 active listings.', ephemeral: true });
+
+  const tradeChannel = await client.channels.fetch(TRADEBOARD_CHANNEL_ID);
+  const embed = new EmbedBuilder()
+    .setTitle(`👤 ${user.username} is offering:`)
+    .setDescription(`🚗 **${carName}** (#${serial})\n📝 ${note}\n⏳ Expires in 3 hours`)
+    .setColor(0x00AAFF);
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`sendOffer:${userId}:${carName}:${serial}`)
+      .setLabel('💬 Send Offer')
+      .setStyle(ButtonStyle.Primary)
+  );
+
+  const msg = await tradeChannel.send({ embeds: [embed], components: [row] });
+
+  await new TradeListing({
+    userId,
+    car: { name: carName, serial },
+    note,
+    messageId: msg.id
+  }).save();
+
+  setTimeout(async () => {
+    await TradeListing.findOneAndUpdate({ messageId: msg.id }, { active: false });
+    try {
+      const m = await tradeChannel.messages.fetch(msg.id);
+      await m.edit({ components: [] });
+    } catch {}
+  }, 3 * 60 * 60 * 1000);
+
+  await interaction.reply({ content: '✅ Trade listing posted to #tradeboard!', ephemeral: true });
+}
+
+// ----- /canceltrade command -----
+if (commandName === 'canceltrade') {
+  const listings = await TradeListing.find({ userId, active: true });
+  if (!listings.length) return interaction.reply({ content: '🚫 No active listings found.', ephemeral: true });
+
+  for (const listing of listings) {
+    const channel = await client.channels.fetch(TRADEBOARD_CHANNEL_ID);
+    try {
+      const msg = await channel.messages.fetch(listing.messageId);
+      await msg.edit({ components: [] });
+    } catch {}
+    await TradeListing.findByIdAndUpdate(listing._id, { active: false });
+  }
+
+  await interaction.reply({ content: '🗑️ All active listings canceled.', ephemeral: true });
+}
         }
         await garage.save();
         activeDrop = null;
@@ -208,18 +326,18 @@ client.on('interactionCreate', async (interaction) => {
 
       const all = await Garage.find();
       const globalCount = {};
-      for (const g of all) for (const car of g.cars) globalCount[car] = (globalCount[car] || 0) + 1;
+      for (const g of all) for (const car of g.cars) globalCount[car.name] = (globalCount[car.name] || 0) + 1;
 
       const pages = chunkArray(garage.cars, 10);
       const count = {};
       const page = 0;
 
       const list = pages[page].map(car => {
-        count[car] = (count[car] || 0) + 1;
-        const serial = count[car];
+        count[car.name] = (count[car.name] || 0) + 1;
+        const serial = count[car.name];
         const total = globalCount[car];
         const meta = cars.find(c => c.name === car);
-        return `${car} (#${serial} of ${total}) ${getRarityTag(meta)}`;
+        return `${car.name} (#${car.serial} of ${total}) ${getRarityTag(meta)}`;
       }).join('\n');
 
       const embed = new EmbedBuilder()
@@ -253,26 +371,55 @@ client.on('interactionCreate', async (interaction) => {
   }
 
   if (interaction.isButton()) {
+    if (interaction.isStringSelectMenu()) {
+  const [action, senderId, receiverId, carName, serial] = interaction.customId.split(':');
+  if (action !== 'chooseOffer') return;
+  const selected = interaction.values[0];
+  const [offeredName, offeredSerial] = selected.split('#');
+
+  const embed = new EmbedBuilder()
+    .setTitle('📥 Trade Offer')
+    .setDescription(`🔁 <@${senderId}> offers:\n**${offeredName} (#${offeredSerial})**\n📩 For: **${carName} (#${serial})**`)
+    .setColor(0x00CC99);
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('acceptOffer').setLabel('✅ Accept').setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId('declineOffer').setLabel('❌ Decline').setStyle(ButtonStyle.Danger)
+  );
+
+  const tradeChannel = await client.channels.fetch(TRADEOFFERS_CHANNEL_ID);
+  const msg = await tradeChannel.send({ embeds: [embed], components: [row] });
+
+  await new TradeOffer({
+    fromUserId: senderId,
+    toUserId: receiverId,
+    offeredCar: { name: offeredName, serial: parseInt(offeredSerial) },
+    requestedCar: { name: carName, serial: parseInt(serial) },
+    messageId: msg.id
+  }).save();
+
+  await interaction.update({ content: '📨 Offer sent!', components: [] });
+}
     const [type, userId, page] = interaction.customId.split(':');
     if (type !== 'garage' || interaction.user.id !== userId) return;
 
-    const garage = await Garage.findOne({ userId });
+    const userGarage = await Garage.findOne({ userId });
     if (!garage || garage.cars.length === 0) return interaction.reply({ content: '🚫 Garage is empty.', ephemeral: true });
 
     const all = await Garage.find();
     const globalCount = {};
-    for (const g of all) for (const car of g.cars) globalCount[car] = (globalCount[car] || 0) + 1;
+    for (const g of all) for (const car of g.cars) globalCount[car.name] = (globalCount[car.name] || 0) + 1;
 
     const pages = chunkArray(garage.cars, 10);
     const count = {};
     const p = parseInt(page);
 
     const list = pages[p].map(car => {
-      count[car] = (count[car] || 0) + 1;
-      const serial = count[car];
+      count[car.name] = (count[car.name] || 0) + 1;
+      const serial = count[car.name];
       const total = globalCount[car];
       const meta = cars.find(c => c.name === car);
-      return `${car} (#${serial} of ${total}) ${getRarityTag(meta)}`;
+      return `${car.name} (#${car.serial} of ${total}) ${getRarityTag(meta)}`;
     }).join('\n');
 
     const embed = new EmbedBuilder()
@@ -285,6 +432,51 @@ client.on('interactionCreate', async (interaction) => {
     if (p < pages.length - 1) row.addComponents(new ButtonBuilder().setCustomId(`garage:${userId}:${p + 1}`).setLabel('Next ➡️').setStyle(ButtonStyle.Secondary));
 
     await interaction.update({ embeds: [embed], components: row.components.length ? [row] : [] });
+    const [action, targetId, carName, serialStr] = interaction.customId.split(':');
+const serial = parseInt(serialStr);
+
+if (action === 'sendOffer') {
+  const fromGarage = await Garage.findOne({ userId: interaction.user.id });
+  if (!fromGarage || fromGarage.cars.length === 0)
+    return interaction.reply({ content: '🚫 You have no cars to offer.', flags: 64 });
+
+  const carChoices = fromGarage.cars.map(c => ({
+  label: `${c.name} (#${c.serial})`,
+  value: `${c.name}#${c.serial}`
+})).slice(0, 25);
+
+  const row = new ActionRowBuilder().addComponents(
+    new StringSelectMenuBuilder()
+      .setCustomId(`chooseOffer:${interaction.user.id}:${targetId}:${carName}:${serial}`)
+      .setPlaceholder('Select a car to offer')
+      .addOptions(carChoices)
+  );
+
+  return interaction.reply({ content: 'Select a car to offer in trade:', components: [row], flags: 64 });
+}
+
+if (action === 'acceptOffer') {
+  const offer = await TradeOffer.findOne({ messageId: interaction.message.id });
+  if (!offer || offer.status !== 'pending') return interaction.reply({ content: '❌ Offer no longer valid.', flags: 64 });
+
+  const fromGarage = await Garage.findOne({ userId: offer.fromUserId });
+  const toGarage = await Garage.findOne({ userId: offer.toUserId });
+
+  fromGarage.cars = fromGarage.cars.filter(c => !(c.name === offer.offeredCar.name && c.serial === offer.offeredCar.serial));
+  toGarage.cars = toGarage.cars.filter(c => !(c.name === offer.requestedCar.name && c.serial === offer.requestedCar.serial));
+  fromGarage.cars.push(offer.requestedCar);
+  toGarage.cars.push(offer.offeredCar);
+  await fromGarage.save();
+  await toGarage.save();
+
+  await TradeOffer.updateOne({ _id: offer._id }, { status: 'accepted' });
+  await interaction.update({ content: '✅ Trade completed successfully!', components: [] });
+}
+
+if (action === 'declineOffer') {
+  await TradeOffer.updateOne({ messageId: interaction.message.id }, { status: 'declined' });
+  await interaction.update({ content: '❌ Trade declined.', components: [] });
+}
   }
 });
 
