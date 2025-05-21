@@ -218,8 +218,23 @@ function calculateGlobalCounts(garages) {
 }
 function renderGaragePage(garage, globalCount, pageIndex, targetUser, targetUserId, carsMeta) {
   const pages = chunkArray(garage.cars, 10);
-  const count = {};
 
+  // Clamp pageIndex to a valid range
+  if (pageIndex < 0) pageIndex = 0;
+  if (pageIndex > pages.length - 1) pageIndex = pages.length - 1;
+
+  // If garage is empty, show a message
+  if (!pages.length || !pages[pageIndex]) {
+    const embed = new EmbedBuilder()
+      .setTitle(targetUser.id === targetUserId
+        ? `🚗 Your Garage (0 cars)`
+        : `🚗 ${targetUser.username}'s Garage`)
+      .setDescription('No cars found.')
+      .setColor(0x00BFFF);
+    return { embed, components: [] };
+  }
+
+  const count = {};
   const list = pages[pageIndex].map(car => {
     count[car.name] = (count[car.name] || 0) + 1;
     const serial = car.serial;
@@ -666,21 +681,25 @@ client.on('interactionCreate', async (interaction) => {
       const [action, userId, carNameEncoded, serial] = interaction.customId.split(':');
       const carName = carNameEncoded ? decodeURIComponent(carNameEncoded) : undefined;
 
-      if (action === 'garage') {
-        const page = parseInt(serial); // In this context, serial represents the page number
-        const userGarage = await Garage.findOne({ userId });
-        if (!userGarage || userGarage.cars.length === 0)
-          return interaction.reply({ content: '🚫 Garage is empty.', ephemeral: true });
+     if (action === 'garage') {
+  const page = parseInt(serial); // serial represents the page number
+  const userGarage = await Garage.findOne({ userId });
+  if (!userGarage || userGarage.cars.length === 0)
+    return interaction.reply({ content: '🚫 Garage is empty.', ephemeral: true });
 
-        userGarage.userId = userId;
-        const globalCount = calculateGlobalCounts(await Garage.find());
+  const pages = chunkArray(userGarage.cars, 10); // Add this line to calculate number of pages
+  // Clamp page to a valid range
+  const safePage = Math.max(0, Math.min(page, pages.length - 1)); // This is the important line!
 
-        // For flipping pages, fetch correct user
-        const targetUser = await client.users.fetch(userId);
+  userGarage.userId = userId;
+  const globalCount = calculateGlobalCounts(await Garage.find());
 
-        const { embed, components } = renderGaragePage(userGarage, globalCount, page, targetUser, userId, cars);
-        await interaction.update({ embeds: [embed], components });
-      }
+  // For flipping pages, fetch correct user
+  const targetUser = await client.users.fetch(userId);
+
+  const { embed, components } = renderGaragePage(userGarage, globalCount, safePage, targetUser, userId, cars);
+  await interaction.update({ embeds: [embed], components });
+}
 
       if (action === 'sendOffer') {
         // Prevent sending offers to yourself
