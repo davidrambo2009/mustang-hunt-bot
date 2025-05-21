@@ -6,7 +6,8 @@ const {
   Client, GatewayIntentBits, EmbedBuilder,
   SlashCommandBuilder, PermissionFlagsBits, ActionRowBuilder,
   ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, ModalBuilder,
-  TextInputBuilder, TextInputStyle, InteractionType
+  TextInputBuilder, TextInputStyle, InteractionType,
+  REST, Routes
 } = require('discord.js');
 
 // ---- Persistent logging ----
