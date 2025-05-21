@@ -228,20 +228,21 @@ client.once('ready', async () => {
   }
 
   const commands = [
-    new SlashCommandBuilder().setName('claim').setDescription('Claim the currently dropped car'),
-    new SlashCommandBuilder().setName('drop').setDescription('Force a drop').setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-    new SlashCommandBuilder().setName('garage').setDescription('View a garage').addUserOption(opt => opt.setName('user').setDescription('User to view')),
-    new SlashCommandBuilder().setName('resetgarage').setDescription("Reset a user's garage").addUserOption(opt => opt.setName('user').setDescription('User').setRequired(true)).setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-    new SlashCommandBuilder().setName('stats').setDescription('View bot stats'),
-    new SlashCommandBuilder()
+  new SlashCommandBuilder().setName('claim').setDescription('Claim the currently dropped car'),
+  new SlashCommandBuilder().setName('drop').setDescription('Force a drop').setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+  new SlashCommandBuilder().setName('garage').setDescription('View a garage').addUserOption(opt => opt.setName('user').setDescription('User to view')),
+  new SlashCommandBuilder().setName('resetgarage').setDescription("Reset a user's garage").addUserOption(opt => opt.setName('user').setDescription('User').setRequired(true)).setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+  new SlashCommandBuilder().setName('stats').setDescription('View bot stats'),
+  // TRADE COMMANDS (these must be included!)
+  new SlashCommandBuilder()
       .setName('trade')
       .setDescription('List a car for trade')
       .addStringOption(opt => opt.setName('car').setDescription('Exact car name with serial (e.g. 2025 GT350 #2)').setRequired(true))
       .addStringOption(opt => opt.setName('note').setDescription('Optional trade note')),
-    new SlashCommandBuilder()
+  new SlashCommandBuilder()
       .setName('canceltrade')
-      .setDescription('Cancel all your active trade listings')
-  ];
+      .setDescription('Cancel all your active trade listings'),
+];
 
   try {
     const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
