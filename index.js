@@ -144,7 +144,7 @@ function chunkArray(arr, size) {
 }
 
 // 🔧 Utility: Generate an embed and pagination buttons for a garage page
-function renderGaragePage(userGarage, page, globalCount) {
+function client.on('interactionCreate',(userGarage, page, globalCount) {
   const pages = chunkArray(userGarage.cars, 10);
   const count = {};
 
@@ -356,7 +356,7 @@ if (commandName === 'canceltrade') {
 
       const all = await Garage.find();
 const globalCount = calculateGlobalCounts(all);
-const { embed, row } = renderGaragePage(garage, globalCount, 0, user, target.id, cars);
+const { embed, row } = (garage, globalCount, 0, user, target.id, cars);
 
 await interaction.reply({ embeds: [embed], components: row.components.length ? [row] : [], ephemeral: false });
 
@@ -570,5 +570,6 @@ function renderGaragePage(garage, globalCount, pageIndex, user, userId, carsMeta
 
   return { embed, row };
 }
+});
 
 client.login(process.env.TOKEN);
