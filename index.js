@@ -46,33 +46,50 @@ const Garage = mongoose.model('Garage', garageSchema);
     });
     log('✅ Connected to MongoDB');
 
-    if (process.env.RUN_MIGRATION === 'true') {
-      try {
-        const allGarages = await Garage.find();
-        let totalChanged = 0;
-        for (const garage of allGarages) {
-          let changed = false;
-          for (let i = 0; i < garage.cars.length; i++) {
-            let car = garage.cars[i];
-            if (typeof car === 'string') {
-              garage.cars[i] = { name: car, serial: 1 };
-              changed = true;
-              continue;
-            }
-            if (!car) {
-              garage.cars[i] = { name: "Unknown Car", serial: 1 };
-              changed = true;
-              continue;
-            }
-            if (!car.name) {
-              garage.cars[i].name = "Unknown Car";
-              changed = true;
-            }
-            if (typeof car.serial !== 'number') {
-              garage.cars[i].serial = 1;
-              changed = true;
-            }
+   if (process.env.RUN_MIGRATION === 'true') {
+  try {
+    const allGarages = await Garage.find();
+    let totalChanged = 0;
+    for (const garage of allGarages) {
+      let changed = false;
+      let newCars = [];
+
+      for (let i = 0; i < garage.cars.length; i++) {
+        let car = garage.cars[i];
+        if (typeof car === 'string') {
+          newCars.push({ name: car, serial: 1 });
+          changed = true;
+        } else if (!car) {
+          newCars.push({ name: "Unknown Car", serial: 1 });
+          changed = true;
+        } else {
+          let fixedCar = { ...car };
+          if (!fixedCar.name) {
+            fixedCar.name = "Unknown Car";
+            changed = true;
           }
+          if (typeof fixedCar.serial !== 'number') {
+            fixedCar.serial = 1;
+            changed = true;
+          }
+          newCars.push(fixedCar);
+        }
+      }
+
+      if (changed) {
+        garage.cars = newCars;
+        await garage.save();
+        console.log(`Updated garage for user ${garage.userId}`);
+        totalChanged++;
+      }
+    }
+    console.log(`✅ Migration complete! Updated ${totalChanged} garages.`);
+    process.exit(0);
+  } catch (err) {
+    console.error('Migration failed:', err);
+    process.exit(1);
+  }
+}
           if (changed) {
             await garage.save();
             console.log(`Updated garage for user ${garage.userId}`);
