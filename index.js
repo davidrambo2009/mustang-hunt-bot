@@ -216,7 +216,7 @@ function calculateGlobalCounts(garages) {
   }
   return globalCount;
 }
-function renderGaragePage(garage, globalCount, pageIndex, user, userId, carsMeta) {
+function renderGaragePage(garage, globalCount, pageIndex, targetUser, targetUserId, carsMeta) {
   const pages = chunkArray(garage.cars, 10);
   const count = {};
 
@@ -229,15 +229,15 @@ function renderGaragePage(garage, globalCount, pageIndex, user, userId, carsMeta
   }).join('\n');
 
   const embed = new EmbedBuilder()
-    .setTitle(user.id === userId
+    .setTitle(targetUser.id === targetUserId
       ? `🚗 Your Garage (${garage.cars.length} cars) - Page ${pageIndex + 1}/${pages.length}`
-      : `🚗 ${user.username}'s Garage - Page ${pageIndex + 1}/${pages.length}`)
+      : `🚗 ${targetUser.username}'s Garage - Page ${pageIndex + 1}/${pages.length}`)
     .setDescription(list)
     .setColor(0x00BFFF);
 
   const row = new ActionRowBuilder();
-  if (pageIndex > 0) row.addComponents(new ButtonBuilder().setCustomId(`garage:${userId}:${pageIndex - 1}`).setLabel('⬅️ Prev').setStyle(ButtonStyle.Secondary));
-  if (pageIndex < pages.length - 1) row.addComponents(new ButtonBuilder().setCustomId(`garage:${userId}:${pageIndex + 1}`).setLabel('Next ➡️').setStyle(ButtonStyle.Secondary));
+  if (pageIndex > 0) row.addComponents(new ButtonBuilder().setCustomId(`garage:${targetUserId}:${pageIndex - 1}`).setLabel('⬅️ Prev').setStyle(ButtonStyle.Secondary));
+  if (pageIndex < pages.length - 1) row.addComponents(new ButtonBuilder().setCustomId(`garage:${targetUserId}:${pageIndex + 1}`).setLabel('Next ➡️').setStyle(ButtonStyle.Secondary));
 
   return { embed, components: row.components.length ? [row] : [] };
 }
@@ -480,7 +480,8 @@ client.on('interactionCreate', async (interaction) => {
 
         const all = await Garage.find();
         const globalCount = calculateGlobalCounts(all);
-        const { embed, components } = renderGaragePage(garage, globalCount, 0, user, target.id, cars);
+        // Pass target as both user and userId for correct garage view!
+        const { embed, components } = renderGaragePage(garage, globalCount, 0, target, target.id, cars);
 
         await interaction.reply({ embeds: [embed], components, ephemeral: false });
       } catch (error) {
@@ -622,32 +623,32 @@ client.on('interactionCreate', async (interaction) => {
         messageId: msg.id
       }).save();
       // Fetch user objects for display names (optional, but nice)
-const sender = await client.users.fetch(senderId);
-const receiver = await client.users.fetch(receiverId);
+      const sender = await client.users.fetch(senderId);
+      const receiver = await client.users.fetch(receiverId);
 
-const tradeOfferEmbed = new EmbedBuilder()
-  .setTitle('Trade Offer')
-  .setDescription(
-    `👤 **${sender.username}** is offering:\n` +
-    `🚗 **${offeredName}** (#${parsedOfferedSerial})\n\n` +
-    `For: **${carName}** (#${parsedSerial})`
-  )
-  .setColor(0x00AAFF);
+      const tradeOfferEmbed = new EmbedBuilder()
+        .setTitle('Trade Offer')
+        .setDescription(
+          `👤 **${sender.username}** is offering:\n` +
+          `🚗 **${offeredName}** (#${parsedOfferedSerial})\n\n` +
+          `For: **${carName}** (#${parsedSerial})`
+        )
+        .setColor(0x00AAFF);
 
-const offerRow = new ActionRowBuilder().addComponents(
-  new ButtonBuilder()
-    .setCustomId(`acceptOffer:${senderId}:${receiverId}`) // add more info if you want
-    .setLabel('✅ Accept')
-    .setStyle(ButtonStyle.Success),
-  new ButtonBuilder()
-    .setCustomId(`declineOffer:${senderId}:${receiverId}`)
-    .setLabel('❌ Decline')
-    .setStyle(ButtonStyle.Danger)
-);
+      const offerRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`acceptOffer:${senderId}:${receiverId}`) // add more info if you want
+          .setLabel('✅ Accept')
+          .setStyle(ButtonStyle.Success),
+        new ButtonBuilder()
+          .setCustomId(`declineOffer:${senderId}:${receiverId}`)
+          .setLabel('❌ Decline')
+          .setStyle(ButtonStyle.Danger)
+      );
 
-// Send to the trade offers channel
-const tradeOffersChannel = await client.channels.fetch(TRADEOFFERS_CHANNEL_ID);
-await tradeOffersChannel.send({ embeds: [tradeOfferEmbed], components: [offerRow] });
+      // Send to the trade offers channel
+      const tradeOffersChannel = await client.channels.fetch(TRADEOFFERS_CHANNEL_ID);
+      await tradeOffersChannel.send({ embeds: [tradeOfferEmbed], components: [offerRow] });
 
       // Optionally, reply to confirm offer sent
       await interaction.reply({ content: '✅ Trade offer sent!', ephemeral: true });
@@ -674,7 +675,10 @@ await tradeOffersChannel.send({ embeds: [tradeOfferEmbed], components: [offerRow
         userGarage.userId = userId;
         const globalCount = calculateGlobalCounts(await Garage.find());
 
-        const { embed, components } = renderGaragePage(userGarage, globalCount, page, interaction.user, userId, cars);
+        // For flipping pages, fetch correct user
+        const targetUser = await client.users.fetch(userId);
+
+        const { embed, components } = renderGaragePage(userGarage, globalCount, page, targetUser, userId, cars);
         await interaction.update({ embeds: [embed], components });
       }
 
