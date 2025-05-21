@@ -98,12 +98,6 @@ const tradeListingSchema = new mongoose.Schema({
   }
 })();
 
-const garageSchema = new mongoose.Schema({
-  userId: String,
-  cars: [{ name: String, serial: Number }]
-});
-const Garage = mongoose.model('Garage', garageSchema);
-
 const tradeListingSchema = new mongoose.Schema({
   userId: String,
   car: { name: String, serial: Number },
