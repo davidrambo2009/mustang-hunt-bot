@@ -5,7 +5,8 @@ const mongoose = require('mongoose');
 const {
   Client, GatewayIntentBits, EmbedBuilder, REST, Routes,
   SlashCommandBuilder, PermissionFlagsBits, ActionRowBuilder,
-  ButtonBuilder, ButtonStyle, StringSelectMenuBuilder
+  ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, ModalBuilder,
+  TextInputBuilder, TextInputStyle, InteractionType
 } = require('discord.js');
 
 // ---- Persistent logging ----
@@ -119,20 +120,18 @@ const requiredForNascar = ['2024 Mustang GT3', '2024 Mustang GT4', '2025 Mustang
 let activeDrop = null;
 let dropTimeout = null;
 const claimingUsers = new Set();
-const claimCooldowns = new Map(); // --- cooldown map ---
+const claimCooldowns = new Map();
 
 // --- Utility Functions ---
 function getChanceFromRarity(level) {
   return 12 / level;
 }
-
 function getRarityTag(car) {
   if (!car || !car.rarity) return '[Unknown]';
   if (car.rarity === 'Godly') return '***[GODLY]***';
   if (car.rarity === 'Ultra Mythic') return '**[ULTRA MYTHIC]**';
   return `[${car.rarity.toUpperCase()}]`;
 }
-
 function getRandomCar() {
   const weighted = cars.map(car => ({ ...car, chance: getChanceFromRarity(car.rarityLevel) }));
   const total = weighted.reduce((acc, c) => acc + c.chance, 0);
@@ -144,13 +143,11 @@ function getRandomCar() {
   }
   return weighted[0];
 }
-
 function chunkArray(arr, size) {
   const result = [];
   for (let i = 0; i < arr.length; i += size) result.push(arr.slice(i, i + size));
   return result;
 }
-
 function calculateGlobalCounts(garages) {
   const globalCount = {};
   for (const g of garages) {
@@ -160,7 +157,6 @@ function calculateGlobalCounts(garages) {
   }
   return globalCount;
 }
-
 function renderGaragePage(garage, globalCount, pageIndex, user, userId, carsMeta) {
   const pages = chunkArray(garage.cars, 10);
   const count = {};
@@ -194,7 +190,6 @@ function scheduleNextDrop(channel) {
     if (!activeDrop) dropCar(channel);
   }, delay);
 }
-
 function dropCar(channel) {
   if (activeDrop) return;
   const car = getRandomCar();
@@ -227,26 +222,28 @@ client.once('ready', async () => {
     log('❌ Error fetching drop channel: ' + e);
   }
 
+  // Use per-guild registration for instant updates
+  const GUILD_ID = 'YOUR_GUILD_ID'; // <- Replace with your server's ID!
   const commands = [
-  new SlashCommandBuilder().setName('claim').setDescription('Claim the currently dropped car'),
-  new SlashCommandBuilder().setName('drop').setDescription('Force a drop').setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-  new SlashCommandBuilder().setName('garage').setDescription('View a garage').addUserOption(opt => opt.setName('user').setDescription('User to view')),
-  new SlashCommandBuilder().setName('resetgarage').setDescription("Reset a user's garage").addUserOption(opt => opt.setName('user').setDescription('User').setRequired(true)).setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-  new SlashCommandBuilder().setName('stats').setDescription('View bot stats'),
-  // TRADE COMMANDS (these must be included!)
-  new SlashCommandBuilder()
+    new SlashCommandBuilder().setName('claim').setDescription('Claim the currently dropped car'),
+    new SlashCommandBuilder().setName('drop').setDescription('Force a drop').setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+    new SlashCommandBuilder().setName('garage').setDescription('View a garage').addUserOption(opt => opt.setName('user').setDescription('User to view')),
+    new SlashCommandBuilder().setName('resetgarage').setDescription("Reset a user's garage").addUserOption(opt => opt.setName('user').setDescription('User').setRequired(true)).setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+    new SlashCommandBuilder().setName('stats').setDescription('View bot stats'),
+    new SlashCommandBuilder()
       .setName('trade')
-      .setDescription('List a car for trade')
-      .addStringOption(opt => opt.setName('car').setDescription('Exact car name with serial (e.g. 2025 GT350 #2)').setRequired(true))
-      .addStringOption(opt => opt.setName('note').setDescription('Optional trade note')),
-  new SlashCommandBuilder()
+      .setDescription('List a car for trade (select from menu, then add a note)'),
+    new SlashCommandBuilder()
       .setName('canceltrade')
       .setDescription('Cancel all your active trade listings'),
-];
+  ].map(cmd => cmd.toJSON());
 
   try {
     const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
-    await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
+    await rest.put(
+      Routes.applicationGuildCommands(client.user.id, GUILD_ID),
+      { body: commands }
+    );
     log('✅ Slash commands registered');
   } catch (e) {
     log('❌ Error registering slash commands: ' + e);
@@ -305,63 +302,23 @@ client.on('interactionCreate', async (interaction) => {
 
     if (commandName === 'trade') {
       try {
-        const carInput = options.getString('car');
-        const note = options.getString('note') || 'No message';
-        const match = carInput.match(/(.+?)\s+#(\d+)/);
-        if (!match) return interaction.reply({ content: '⚠️ Format must be: Car Name #Serial (e.g. 2025 GT350 #2)', ephemeral: true });
-
-        const [, carName, serialStr] = match;
-        const serial = parseInt(serialStr);
         const garage = await Garage.findOne({ userId });
-        if (!garage || garage.cars.length === 0) return interaction.reply({ content: '🚫 Your garage is empty.', ephemeral: true });
+        if (!garage || garage.cars.length === 0)
+          return interaction.reply({ content: '🚫 Your garage is empty.', ephemeral: true });
 
-        const count = {};
-        let matchSerial = null;
-        for (const car of garage.cars) {
-          count[car.name] = (count[car.name] || 0) + 1;
-          if (car.name === carName && count[car.name] === serial) {
-            matchSerial = serial;
-            break;
-          }
-        }
-        if (!matchSerial) return interaction.reply({ content: '🚫 You do not own that serial.', ephemeral: true });
-
-        const activeListings = await TradeListing.countDocuments({ userId, active: true });
-        if (activeListings >= 3) return interaction.reply({ content: '⚠️ You already have 3 active listings.', ephemeral: true });
-
-        const tradeChannel = await client.channels.fetch(TRADEBOARD_CHANNEL_ID);
-        const embed = new EmbedBuilder()
-          .setTitle(`👤 ${user.username} is offering:`)
-          .setDescription(`🚗 **${carName}** (#${serial})\n📝 ${note}\n⏳ Expires in 3 hours`)
-          .setColor(0x00AAFF);
+        const carChoices = garage.cars.map(c => ({
+          label: `${c.name} (#${c.serial})`,
+          value: `${c.name}#${c.serial}`
+        })).slice(0, 25);
 
         const row = new ActionRowBuilder().addComponents(
-          new ButtonBuilder()
-            .setCustomId(`sendOffer:${userId}:${carName}:${serial}`)
-            .setLabel('💬 Send Offer')
-            .setStyle(ButtonStyle.Primary)
+          new StringSelectMenuBuilder()
+            .setCustomId(`tradeSelect:${userId}`)
+            .setPlaceholder('Select a car to list for trade')
+            .addOptions(carChoices)
         );
 
-        const msg = await tradeChannel.send({ embeds: [embed], components: [row] });
-
-        await new TradeListing({
-          userId,
-          car: { name: carName, serial },
-          note,
-          messageId: msg.id
-        }).save();
-
-        setTimeout(async () => {
-          try {
-            await TradeListing.findOneAndUpdate({ messageId: msg.id }, { active: false });
-            const m = await tradeChannel.messages.fetch(msg.id);
-            await m.edit({ components: [] });
-          } catch (err) {
-            log(`Failed to update trade message (timeout): ${err}`);
-          }
-        }, 3 * 60 * 60 * 1000);
-
-        await interaction.reply({ content: '✅ Trade listing posted to #tradeboard!', ephemeral: true });
+        await interaction.reply({ content: 'Select a car from your garage to list for trade:', components: [row], ephemeral: true });
       } catch (error) {
         log(`DB ERROR in /trade: ${error}`);
         await interaction.reply({ content: '❌ An error occurred. Please try again later.', ephemeral: true });
@@ -449,11 +406,81 @@ client.on('interactionCreate', async (interaction) => {
     }
   }
 
-  // --- Select Menu for Trade Offers ---
-  if (interaction.isStringSelectMenu()) {
+  // --- Select Menu for /trade (car pick) ---
+  if (interaction.isStringSelectMenu() && interaction.customId.startsWith("tradeSelect:")) {
+    const [carName, serial] = interaction.values[0].split('#');
+    // Show a modal to collect the note
+    const noteModal = new ModalBuilder()
+      .setCustomId(`tradeNoteModal:${carName}#${serial}`)
+      .setTitle('Add a note to your listing (optional)');
+
+    const noteInput = new TextInputBuilder()
+      .setCustomId('tradeNote')
+      .setLabel('Trade note (optional)')
+      .setStyle(TextInputStyle.Short)
+      .setRequired(false)
+      .setPlaceholder('Ex: Looking for something rare!');
+
+    noteModal.addComponents(
+      new ActionRowBuilder().addComponents(noteInput)
+    );
+    await interaction.showModal(noteModal);
+    return;
+  }
+
+  // --- Modal submit for /trade (note) ---
+  if (interaction.type === InteractionType.ModalSubmit && interaction.customId.startsWith('tradeNoteModal:')) {
+    const [carName, serial] = interaction.customId.replace('tradeNoteModal:', '').split('#');
+    const note = interaction.fields.getTextInputValue('tradeNote') || '';
     try {
-      const [action, senderId, receiverId, carName, serial] = interaction.customId.split(':');
-      if (action !== 'chooseOffer') return;
+      const userId = interaction.user.id;
+      const activeListings = await TradeListing.countDocuments({ userId, active: true });
+      if (activeListings >= 3) return interaction.reply({ content: '⚠️ You already have 3 active listings.', ephemeral: true });
+
+      const tradeChannel = await client.channels.fetch(TRADEBOARD_CHANNEL_ID);
+      const embed = new EmbedBuilder()
+        .setTitle(`👤 ${interaction.user.username} is offering:`)
+        .setDescription(`🚗 **${carName}** (#${serial})\n📝 ${note || 'No message'}\n⏳ Expires in 3 hours`)
+        .setColor(0x00AAFF);
+
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`sendOffer:${userId}:${carName}:${serial}`)
+          .setLabel('💬 Send Offer')
+          .setStyle(ButtonStyle.Primary)
+      );
+
+      const msg = await tradeChannel.send({ embeds: [embed], components: [row] });
+
+      await new TradeListing({
+        userId,
+        car: { name: carName, serial: parseInt(serial) },
+        note,
+        messageId: msg.id
+      }).save();
+
+      setTimeout(async () => {
+        try {
+          await TradeListing.findOneAndUpdate({ messageId: msg.id }, { active: false });
+          const m = await tradeChannel.messages.fetch(msg.id);
+          await m.edit({ components: [] });
+        } catch (err) {
+          log(`Failed to update trade message (timeout): ${err}`);
+        }
+      }, 3 * 60 * 60 * 1000);
+
+      await interaction.reply({ content: '✅ Trade listing posted to #tradeboard!', ephemeral: true });
+    } catch (error) {
+      log(`DB ERROR in tradeNoteModal: ${error}`);
+      await interaction.reply({ content: '❌ An error occurred. Please try again later.', ephemeral: true });
+    }
+    return;
+  }
+
+  // --- Select Menu for Trade Offers ---
+  if (interaction.isStringSelectMenu() && interaction.customId.startsWith("chooseOffer:")) {
+    try {
+      const [_, senderId, receiverId, carName, serial] = interaction.customId.split(':');
       const selected = interaction.values[0];
       const [offeredName, offeredSerial] = selected.split('#');
 
@@ -495,7 +522,7 @@ client.on('interactionCreate', async (interaction) => {
         if (!userGarage || userGarage.cars.length === 0)
           return interaction.reply({ content: '🚫 Garage is empty.', ephemeral: true });
 
-        userGarage.userId = userId; // Needed for button IDs
+        userGarage.userId = userId;
         const globalCount = calculateGlobalCounts(await Garage.find());
         const page = parseInt(pageOrOther);
 
