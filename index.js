@@ -512,7 +512,9 @@ if (action === 'sendOffer') {
 
 if (action === 'acceptOffer') {
   const offer = await TradeOffer.findOne({ messageId: interaction.message.id });
-  if (!offer || offer.status !== 'pending') return interaction.reply({ content: '❌ Offer no longer valid.', flags: 64 });
+  if (!offer || offer.status !== 'pending') {
+  return interaction.reply({ content: '❌ Offer no longer valid.', flags: 64 });
+}
 
   const fromGarage = await Garage.findOne({ userId: offer.fromUserId });
   const toGarage = await Garage.findOne({ userId: offer.toUserId });
