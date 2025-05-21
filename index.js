@@ -1,6 +1,6 @@
 require('dotenv').config();
 require('./keepAlive');
-const fs = require('fs'); 
+const fs = require('fs');
 const mongoose = require('mongoose');
 const {
   Client, GatewayIntentBits, EmbedBuilder,
@@ -26,12 +26,12 @@ const client = new Client({
   ]
 });
 
-// ----- UPDATED CHANNEL IDs ----- 
+// ----- CHANNEL IDs -----
 const DROP_CHANNEL_ID = '1372749024662257664';
 const GARAGE_CHANNEL_ID = '1372749137413668884';
-const TRADE_POSTS_CHANNEL_ID = '1374486602012692581'; // Renamed from TRADEBOARD_CHANNEL_ID to TRADE_POSTS_CHANNEL_ID
+const TRADE_POSTS_CHANNEL_ID = '1374486602012692581';
 const TRADEOFFERS_CHANNEL_ID = '1374486704387264512';
-const TRADE_COMMAND_CHANNEL_ID = '1374623379406979134'; // new trade-commands channel for /trade
+const TRADE_COMMAND_CHANNEL_ID = '1374623379406979134';
 
 // ---- GUILD ID ----
 const GUILD_ID = '1370450475400302686';
@@ -367,7 +367,7 @@ client.on('interactionCreate', async (interaction) => {
 
         const carChoices = garage.cars.map(c => ({
           label: `${c.name} (#${c.serial})`,
-          value: `${c.name}#${c.serial}`
+          value: `${encodeURIComponent(c.name)}#${c.serial}`
         })).slice(0, 25);
 
         const row = new ActionRowBuilder().addComponents(
@@ -389,8 +389,8 @@ client.on('interactionCreate', async (interaction) => {
         const listings = await TradeListing.find({ userId, active: true });
         if (!listings.length) return interaction.reply({ content: '🚫 No active listings found.', ephemeral: true });
 
+        const channel = await client.channels.fetch(TRADE_POSTS_CHANNEL_ID);
         for (const listing of listings) {
-          const channel = await client.channels.fetch(TRADE_POSTS_CHANNEL_ID);
           try {
             const msg = await channel.messages.fetch(listing.messageId);
             await msg.edit({ components: [] });
@@ -467,10 +467,12 @@ client.on('interactionCreate', async (interaction) => {
 
   // --- Select Menu for /trade (car pick) ---
   if (interaction.isStringSelectMenu() && interaction.customId.startsWith("tradeSelect:")) {
-    const [carName, serial] = interaction.values[0].split('#');
+    const [carNameEncoded, serial] = interaction.values[0].split('#');
+    const carName = decodeURIComponent(carNameEncoded);
+
     // Show a modal to collect the note
     const noteModal = new ModalBuilder()
-      .setCustomId(`tradeNoteModal:${carName}#${serial}`)
+      .setCustomId(`tradeNoteModal:${encodeURIComponent(carName)}#${serial}`)
       .setTitle('Add a note to your listing (optional)');
 
     const noteInput = new TextInputBuilder()
@@ -489,7 +491,8 @@ client.on('interactionCreate', async (interaction) => {
 
   // --- Modal submit for /trade (note) ---
   if (interaction.type === InteractionType.ModalSubmit && interaction.customId.startsWith('tradeNoteModal:')) {
-    const [carName, serial] = interaction.customId.replace('tradeNoteModal:', '').split('#');
+    const [carNameEncoded, serial] = interaction.customId.replace('tradeNoteModal:', '').split('#');
+    const carName = decodeURIComponent(carNameEncoded);
     const note = interaction.fields.getTextInputValue('tradeNote') || '';
     try {
       const userId = interaction.user.id;
@@ -505,7 +508,7 @@ client.on('interactionCreate', async (interaction) => {
 
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-          .setCustomId(`sendOffer:${userId}:${carName}:${serial}`)
+          .setCustomId(`sendOffer:${userId}:${encodeURIComponent(carName)}:${serial}`)
           .setLabel('💬 Send Offer')
           .setStyle(ButtonStyle.Primary)
       );
@@ -541,51 +544,54 @@ client.on('interactionCreate', async (interaction) => {
   // --- Select Menu for Trade Offers ---
   if (interaction.isStringSelectMenu() && interaction.customId.startsWith("chooseOffer:")) {
     try {
-      const [_, senderId, receiverId, carName, serial] = interaction.customId.split(':');
+      const msg = interaction.message;
+      const [_, senderId, receiverId, carNameEncoded, serial] = interaction.customId.split(':');
+      const carName = decodeURIComponent(carNameEncoded);
       const selected = interaction.values[0];
-      const [offeredName, offeredSerial] = selected.split('#');
+      const [offeredNameEncoded, offeredSerial] = selected.split('#');
+      const offeredName = decodeURIComponent(offeredNameEncoded);
 
-      const embed = new EmbedBuilder()
-        .setTitle('📥 Trade Offer')
-        .setDescription(`🔁 <@${senderId}> offers:\n**${offeredName} (#${offeredSerial})**\n📩 For: **${carName} (#${serial})**`)
-        .setColor(0x00CC99);
+      // Validate serial numbers
+      const parsedSerial = parseInt(serial, 10);
+      const parsedOfferedSerial = parseInt(offeredSerial, 10);
+      if (isNaN(parsedSerial) || isNaN(parsedOfferedSerial)) {
+        log(`Invalid serial(s): offeredSerial=${offeredSerial}, requestedSerial=${serial}, customId=${interaction.customId}, selected=${selected}`);
+        return interaction.reply({ content: '❌ Invalid car serial number detected in trade.', ephemeral: true });
+      }
 
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('acceptOffer').setLabel('✅ Accept').setStyle(ButtonStyle.Success),
-        new ButtonBuilder().setCustomId('declineOffer').setLabel('❌ Decline').setStyle(ButtonStyle.Danger)
-      );
-
-      const tradeChannel = await client.channels.fetch(TRADEOFFERS_CHANNEL_ID);
-      const msg = await tradeChannel.send({ embeds: [embed], components: [row] });
-
+      // Proceed with the trade offer creation
       await new TradeOffer({
         fromUserId: senderId,
         toUserId: receiverId,
-        offeredCar: { name: offeredName, serial: parseInt(offeredSerial) },
-        requestedCar: { name: carName, serial: parseInt(serial) },
+        offeredCar: { name: offeredName, serial: parsedOfferedSerial },
+        requestedCar: { name: carName, serial: parsedSerial },
         messageId: msg.id
       }).save();
 
-      await interaction.update({ content: '📨 Offer sent!', components: [] });
-    } catch (error) {
-      log(`DB ERROR in select menu: ${error}`);
-      await interaction.reply({ content: '❌ An error occurred. Please try again later.', ephemeral: true });
+      // Optionally, reply to confirm offer sent
+      await interaction.reply({ content: '✅ Trade offer sent!', ephemeral: true });
+
+    } catch (err) {
+      log('DB ERROR in select menu: ' + err +
+        ` | senderId=${senderId}, receiverId=${receiverId}, carName=${carNameEncoded}, serial=${serial}, offeredName=${offeredNameEncoded}, offeredSerial=${offeredSerial}`);
+      return interaction.reply({ content: '❌ Something went wrong when processing the trade offer.', ephemeral: true });
     }
   }
 
   // --- Button Handlers ---
   if (interaction.isButton()) {
     try {
-      const [action, userId, pageOrOther, carName, serial] = interaction.customId.split(':');
+      const [action, userId, carNameEncoded, serial] = interaction.customId.split(':');
+      const carName = carNameEncoded ? decodeURIComponent(carNameEncoded) : undefined;
 
       if (action === 'garage') {
+        const page = parseInt(serial); // In this context, serial represents the page number
         const userGarage = await Garage.findOne({ userId });
         if (!userGarage || userGarage.cars.length === 0)
           return interaction.reply({ content: '🚫 Garage is empty.', ephemeral: true });
 
         userGarage.userId = userId;
         const globalCount = calculateGlobalCounts(await Garage.find());
-        const page = parseInt(pageOrOther);
 
         const { embed, components } = renderGaragePage(userGarage, globalCount, page, interaction.user, userId, cars);
         await interaction.update({ embeds: [embed], components });
@@ -603,12 +609,12 @@ client.on('interactionCreate', async (interaction) => {
 
         const carChoices = fromGarage.cars.map(c => ({
           label: `${c.name} (#${c.serial})`,
-          value: `${c.name}#${c.serial}`
+          value: `${encodeURIComponent(c.name)}#${c.serial}`
         })).slice(0, 25);
 
         const row = new ActionRowBuilder().addComponents(
           new StringSelectMenuBuilder()
-            .setCustomId(`chooseOffer:${interaction.user.id}:${userId}:${carName}:${serial}`)
+            .setCustomId(`chooseOffer:${interaction.user.id}:${userId}:${encodeURIComponent(carName)}:${serial}`)
             .setPlaceholder('Select a car to offer')
             .addOptions(carChoices)
         );
@@ -617,8 +623,12 @@ client.on('interactionCreate', async (interaction) => {
       }
 
       if (action === 'acceptOffer') {
-        const offer = await TradeOffer.findOne({ messageId: interaction.message.id });
-        if (!offer || offer.status !== 'pending') {
+        // Atomic update: Only accept if still pending
+        const offer = await TradeOffer.findOneAndUpdate(
+          { messageId: interaction.message.id, status: 'pending' },
+          { status: 'accepted' }
+        );
+        if (!offer) {
           return interaction.reply({ content: '❌ Offer no longer valid.', flags: 64 });
         }
 
@@ -632,7 +642,6 @@ client.on('interactionCreate', async (interaction) => {
         await fromGarage.save();
         await toGarage.save();
 
-        await TradeOffer.updateOne({ _id: offer._id }, { status: 'accepted' });
         await interaction.update({ content: '✅ Trade completed successfully!', components: [] });
       }
 
