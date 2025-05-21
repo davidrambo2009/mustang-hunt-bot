@@ -143,6 +143,33 @@ function chunkArray(arr, size) {
   return result;
 }
 
+// 🔧 Utility: Generate an embed and pagination buttons for a garage page
+function renderGaragePage(userGarage, page, globalCount) {
+  const pages = chunkArray(userGarage.cars, 10);
+  const count = {};
+
+  const list = pages[page].map(car => {
+    count[car.name] = (count[car.name] || 0) + 1;
+    const serial = car.serial;
+    const total = globalCount[car.name];
+    const meta = cars.find(c => c.name === car.name);
+    return `${car.name} (#${serial} of ${total}) ${getRarityTag(meta)}`;
+  }).join('\n');
+
+  const embed = new EmbedBuilder()
+    .setTitle(`🚗 Your Garage (${userGarage.cars.length} cars) - Page ${page + 1}/${pages.length}`)
+    .setDescription(list)
+    .setColor(0x00BFFF);
+
+  const row = new ActionRowBuilder();
+  if (page > 0)
+    row.addComponents(new ButtonBuilder().setCustomId(`garage:${userGarage.userId}:${page - 1}`).setLabel('⬅️ Prev').setStyle(ButtonStyle.Secondary));
+  if (page < pages.length - 1)
+    row.addComponents(new ButtonBuilder().setCustomId(`garage:${userGarage.userId}:${page + 1}`).setLabel('Next ➡️').setStyle(ButtonStyle.Secondary));
+
+  return { embed, components: row.components.length ? [row] : [] };
+}
+
 function scheduleNextDrop(channel) {
   const delay = Math.floor(Math.random() * (45 - 10 + 1) + 10) * 60 * 1000;
   setTimeout(() => {
@@ -204,30 +231,38 @@ client.on('interactionCreate', async (interaction) => {
     const userId = user.id;
 
     if (commandName === 'claim') {
-      if (!activeDrop) return interaction.reply({ content: '❌ No car to claim.', ephemeral: true });
-      if (activeDrop.claimed) return interaction.reply({ content: '⚠️ Already claimed.', ephemeral: true });
-      if (claimingUsers.has(userId)) return;
-      claimingUsers.add(userId);
-      try {
-        activeDrop.claimed = true;
-        clearTimeout(dropTimeout);
-        await activeDrop.message.delete().catch(() => {});
-        await channel.send(`${user.username} claimed **${activeDrop.car.name}**! 🏁`);
-        let garage = await Garage.findOne({ userId });
-        if (!garage) garage = new Garage({ userId, cars: [] });
-        const carCount = garage.cars.filter(c => c.name === activeDrop.car.name).length;
-garage.cars.push({ name: activeDrop.car.name, serial: carCount + 1 });
-        if (
-  new Date() <= new Date('2025-05-31') &&
-  requiredForNascar.every(req => garage.cars.some(c => c.name === req)) &&
-  !garage.cars.some(c => c.name === nascarUnlockCar)
-) {
-  garage.cars.push({ name: nascarUnlockCar, serial: 1 });
-  await channel.send(`🎉 ${user.username} unlocked **${nascarUnlockCar}**!`);
+  if (!activeDrop) return interaction.reply({ content: '❌ No car to claim.', ephemeral: true });
+  if (activeDrop.claimed) return interaction.reply({ content: '⚠️ Already claimed.', ephemeral: true });
+  if (claimingUsers.has(userId)) return;
+  claimingUsers.add(userId);
+  try {
+    activeDrop.claimed = true;
+    clearTimeout(dropTimeout);
+    await activeDrop.message.delete().catch(() => {});
+    await channel.send(`${user.username} claimed **${activeDrop.car.name}**! 🏁`);
+    let garage = await Garage.findOne({ userId });
+    if (!garage) garage = new Garage({ userId, cars: [] });
+    const carCount = garage.cars.filter(c => c.name === activeDrop.car.name).length;
+    garage.cars.push({ name: activeDrop.car.name, serial: carCount + 1 });
+
+    if (
+      new Date() <= new Date('2025-05-31') &&
+      requiredForNascar.every(req => garage.cars.some(c => c.name === req)) &&
+      !garage.cars.some(c => c.name === nascarUnlockCar)
+    ) {
+      garage.cars.push({ name: nascarUnlockCar, serial: 1 });
+      await channel.send(`🎉 ${user.username} unlocked **${nascarUnlockCar}**!`);
+    }
+
+    await garage.save();
+    activeDrop = null;
+    scheduleNextDrop(channel);
+    await interaction.reply({ content: '✅ You claimed the car!', flags: 64 });
+  } finally {
+    claimingUsers.delete(userId);
+  }
 }
-          
-          await channel.send(`🎉 ${user.username} unlocked **${nascarUnlockCar}**!`);
-          // ----- /trade command -----
+
 if (commandName === 'trade') {
   const carInput = options.getString('car');
   const note = options.getString('note') || 'No message';
@@ -280,7 +315,9 @@ if (commandName === 'trade') {
     try {
       const m = await tradeChannel.messages.fetch(msg.id);
       await m.edit({ components: [] });
-    } catch {}
+    } catch (err) {
+      console.error(`Failed to update trade message:`, err);
+    }
   }, 3 * 60 * 60 * 1000);
 
   await interaction.reply({ content: '✅ Trade listing posted to #tradeboard!', ephemeral: true });
@@ -296,22 +333,15 @@ if (commandName === 'canceltrade') {
     try {
       const msg = await channel.messages.fetch(listing.messageId);
       await msg.edit({ components: [] });
-    } catch {}
+    } catch (err) {
+      console.error(`Failed to update listing message:`, err);
+    }
     await TradeListing.findByIdAndUpdate(listing._id, { active: false });
   }
 
   await interaction.reply({ content: '🗑️ All active listings canceled.', ephemeral: true });
 }
-        }
-        await garage.save();
-        activeDrop = null;
-        scheduleNextDrop(channel);
-        await interaction.reply({ content: '✅ You claimed the car!', flags: 64 });
-      } finally {
-        claimingUsers.delete(userId);
-      }
-    }
-
+        
     if (commandName === 'drop') {
       if (!member.permissions.has(PermissionFlagsBits.Administrator)) return interaction.reply({ content: '❌ No permission.', ephemeral: true });
       dropCar(channel);
@@ -325,29 +355,11 @@ if (commandName === 'canceltrade') {
       if (!garage || garage.cars.length === 0) return interaction.reply({ content: '🚫 Garage is empty.', ephemeral: true });
 
       const all = await Garage.find();
-      const globalCount = {};
-      for (const g of all) for (const car of g.cars) globalCount[car.name] = (globalCount[car.name] || 0) + 1;
+const globalCount = calculateGlobalCounts(all);
+const { embed, row } = renderGaragePage(garage, globalCount, 0, user, target.id, cars);
 
-      const pages = chunkArray(garage.cars, 10);
-      const count = {};
-      const page = 0;
+await interaction.reply({ embeds: [embed], components: row.components.length ? [row] : [], ephemeral: false });
 
-      const list = pages[page].map(car => {
-        count[car.name] = (count[car.name] || 0) + 1;
-        const serial = count[car.name];
-        const total = globalCount[car];
-        const meta = cars.find(c => c.name === car);
-        return `${car.name} (#${car.serial} of ${total}) ${getRarityTag(meta)}`;
-      }).join('\n');
-
-      const embed = new EmbedBuilder()
-        .setTitle(target.id === user.id ? `🚗 Your Garage (${garage.cars.length} cars)` : `🚗 ${target.username}'s Garage`)
-        .setDescription(list)
-        .setColor(0x00BFFF);
-
-      const row = new ActionRowBuilder();
-      if (pages.length > 1) row.addComponents(new ButtonBuilder().setCustomId(`garage:${target.id}:1`).setLabel('Next ➡️').setStyle(ButtonStyle.Secondary));
-      await interaction.reply({ embeds: [embed], components: row.components.length ? [row] : [], ephemeral: false });
     }
 
     if (commandName === 'resetgarage') {
@@ -370,8 +382,8 @@ if (commandName === 'canceltrade') {
     }
   }
 
-  if (interaction.isButton()) {
-    if (interaction.isStringSelectMenu()) {
+ // ✅ Handles select menu
+if (interaction.isStringSelectMenu()) {
   const [action, senderId, receiverId, carName, serial] = interaction.customId.split(':');
   if (action !== 'chooseOffer') return;
   const selected = interaction.values[0];
@@ -400,39 +412,82 @@ if (commandName === 'canceltrade') {
 
   await interaction.update({ content: '📨 Offer sent!', components: [] });
 }
-    const [type, userId, page] = interaction.customId.split(':');
-    if (type !== 'garage' || interaction.user.id !== userId) return;
+
+// 🔹 Handle buttons
+if (interaction.isButton()) {
+  const [action, userId, pageOrOther] = interaction.customId.split(':');
+
+  if (action === 'garage') {
+    const userGarage = await Garage.findOne({ userId });
+if (!userGarage || userGarage.cars.length === 0)
+  return interaction.reply({ content: '🚫 Garage is empty.', ephemeral: true });
+
+userGarage.userId = userId; // Needed for button IDs
+const globalCount = await calculateGlobalCounts();
+const page = parseInt(pageOrOther);
+
+const { embed, row } = renderGaragePage(userGarage, globalCount, page, interaction.user, userId, cars);
+await interaction.update({ embeds: [embed], components: row.components.length ? [row] : [] });
+
+  }
+
+  if (action === 'acceptOffer') {
+    const offer = await TradeOffer.findOne({ messageId: interaction.message.id });
+    if (!offer || offer.status !== 'pending') return interaction.reply({ content: '❌ Offer no longer valid.', flags: 64 });
+
+    const fromGarage = await Garage.findOne({ userId: offer.fromUserId });
+    const toGarage = await Garage.findOne({ userId: offer.toUserId });
+
+    fromGarage.cars = fromGarage.cars.filter(c => !(c.name === offer.offeredCar.name && c.serial === offer.offeredCar.serial));
+    toGarage.cars = toGarage.cars.filter(c => !(c.name === offer.requestedCar.name && c.serial === offer.requestedCar.serial));
+    fromGarage.cars.push(offer.requestedCar);
+    toGarage.cars.push(offer.offeredCar);
+    await fromGarage.save();
+    await toGarage.save();
+
+    await TradeOffer.updateOne({ _id: offer._id }, { status: 'accepted' });
+    return interaction.update({ content: '✅ Trade completed successfully!', components: [] });
+  }
+
+  if (action === 'declineOffer') {
+    await TradeOffer.updateOne({ messageId: interaction.message.id }, { status: 'declined' });
+    return interaction.update({ content: '❌ Trade declined.', components: [] });
+  }
+}
 
     const userGarage = await Garage.findOne({ userId });
-    if (!garage || garage.cars.length === 0) return interaction.reply({ content: '🚫 Garage is empty.', ephemeral: true });
+if (!userGarage || userGarage.cars.length === 0) return interaction.reply({ content: '🚫 Garage is empty.', ephemeral: true });
 
-    const all = await Garage.find();
-    const globalCount = {};
-    for (const g of all) for (const car of g.cars) globalCount[car.name] = (globalCount[car.name] || 0) + 1;
+const all = await Garage.find();
+const globalCount = {};
+for (const g of all) {
+  for (const car of g.cars) {
+    globalCount[car.name] = (globalCount[car.name] || 0) + 1;
+  }
+}
 
-    const pages = chunkArray(garage.cars, 10);
-    const count = {};
-    const p = parseInt(page);
+const pages = chunkArray(userGarage.cars, 10);
+const count = {};
+const p = parseInt(page);
 
-    const list = pages[p].map(car => {
-      count[car.name] = (count[car.name] || 0) + 1;
-      const serial = count[car.name];
-      const total = globalCount[car];
-      const meta = cars.find(c => c.name === car);
-      return `${car.name} (#${car.serial} of ${total}) ${getRarityTag(meta)}`;
-    }).join('\n');
+const list = pages[p].map(car => {
+  count[car.name] = (count[car.name] || 0) + 1;
+  const serial = car.serial;
+  const total = globalCount[car.name];
+  const meta = cars.find(c => c.name === car.name);
+  return `${car.name} (#${serial} of ${total}) ${getRarityTag(meta)}`;
+}).join('\n');
 
-    const embed = new EmbedBuilder()
-      .setTitle(`🚗 Your Garage (${garage.cars.length} cars) - Page ${p + 1}/${pages.length}`)
-      .setDescription(list)
-      .setColor(0x00BFFF);
+const embed = new EmbedBuilder()
+  .setTitle(`🚗 Your Garage (${userGarage.cars.length} cars) - Page ${p + 1}/${pages.length}`)
+  .setDescription(list)
+  .setColor(0x00BFFF);
 
     const row = new ActionRowBuilder();
     if (p > 0) row.addComponents(new ButtonBuilder().setCustomId(`garage:${userId}:${p - 1}`).setLabel('⬅️ Prev').setStyle(ButtonStyle.Secondary));
     if (p < pages.length - 1) row.addComponents(new ButtonBuilder().setCustomId(`garage:${userId}:${p + 1}`).setLabel('Next ➡️').setStyle(ButtonStyle.Secondary));
 
     await interaction.update({ embeds: [embed], components: row.components.length ? [row] : [] });
-    const [action, targetId, carName, serialStr] = interaction.customId.split(':');
 const serial = parseInt(serialStr);
 
 if (action === 'sendOffer') {
@@ -479,5 +534,41 @@ if (action === 'declineOffer') {
 }
   }
 });
+
+function calculateGlobalCounts(garages) {
+  const globalCount = {};
+  for (const g of garages) {
+    for (const car of g.cars) {
+      globalCount[car.name] = (globalCount[car.name] || 0) + 1;
+    }
+  }
+  return globalCount;
+}
+
+function renderGaragePage(garage, globalCount, pageIndex, user, userId, carsMeta) {
+  const pages = chunkArray(garage.cars, 10);
+  const count = {};
+
+  const list = pages[pageIndex].map(car => {
+    count[car.name] = (count[car.name] || 0) + 1;
+    const serial = car.serial;
+    const total = globalCount[car.name];
+    const meta = carsMeta.find(c => c.name === car.name);
+    return `${car.name} (#${serial} of ${total}) ${getRarityTag(meta)}`;
+  }).join('\n');
+
+  const embed = new EmbedBuilder()
+    .setTitle(user.id === userId
+      ? `🚗 Your Garage (${garage.cars.length} cars) - Page ${pageIndex + 1}/${pages.length}`
+      : `🚗 ${user.username}'s Garage - Page ${pageIndex + 1}/${pages.length}`)
+    .setDescription(list)
+    .setColor(0x00BFFF);
+
+  const row = new ActionRowBuilder();
+  if (pageIndex > 0) row.addComponents(new ButtonBuilder().setCustomId(`garage:${userId}:${pageIndex - 1}`).setLabel('⬅️ Prev').setStyle(ButtonStyle.Secondary));
+  if (pageIndex < pages.length - 1) row.addComponents(new ButtonBuilder().setCustomId(`garage:${userId}:${pageIndex + 1}`).setLabel('Next ➡️').setStyle(ButtonStyle.Secondary));
+
+  return { embed, row };
+}
 
 client.login(process.env.TOKEN);
