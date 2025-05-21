@@ -535,7 +535,6 @@ if (action === 'declineOffer') {
   await interaction.update({ content: '❌ Trade declined.', components: [] });
 }
   }
-});
 
 function calculateGlobalCounts(garages) {
   const globalCount = {};
