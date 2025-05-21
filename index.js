@@ -1,9 +1,26 @@
 require('dotenv').config();
 require('./keepAlive');
-const fs = require('fs');
+const fs = require('fs'); 
 const mongoose = require('mongoose');
+
+const { REST, Routes } = require('discord.js'); //delete this
+
+(async () => {
+  try {
+    const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
+    console.log('Deleting all global application commands...');
+    await rest.put(
+      Routes.applicationCommands('1372635185731997767'),
+      { body: [] }
+    );
+    console.log('✅ All global commands deleted!');
+  } catch (error) {
+    console.error(error);
+  }
+})(); //and this
+
 const {
-  Client, GatewayIntentBits, EmbedBuilder, REST, Routes,
+  Client, GatewayIntentBits, EmbedBuilder,
   SlashCommandBuilder, PermissionFlagsBits, ActionRowBuilder,
   ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, ModalBuilder,
   TextInputBuilder, TextInputStyle, InteractionType
