@@ -567,6 +567,33 @@ client.on('interactionCreate', async (interaction) => {
         requestedCar: { name: carName, serial: parsedSerial },
         messageId: msg.id
       }).save();
+      // Fetch user objects for display names (optional, but nice)
+const sender = await client.users.fetch(senderId);
+const receiver = await client.users.fetch(receiverId);
+
+const tradeOfferEmbed = new EmbedBuilder()
+  .setTitle('Trade Offer')
+  .setDescription(
+    `👤 **${sender.username}** is offering:\n` +
+    `🚗 **${offeredName}** (#${parsedOfferedSerial})\n\n` +
+    `For: **${carName}** (#${parsedSerial})`
+  )
+  .setColor(0x00AAFF);
+
+const offerRow = new ActionRowBuilder().addComponents(
+  new ButtonBuilder()
+    .setCustomId(`acceptOffer:${senderId}:${receiverId}`) // add more info if you want
+    .setLabel('✅ Accept')
+    .setStyle(ButtonStyle.Success),
+  new ButtonBuilder()
+    .setCustomId(`declineOffer:${senderId}:${receiverId}`)
+    .setLabel('❌ Decline')
+    .setStyle(ButtonStyle.Danger)
+);
+
+// Send to the trade offers channel
+const tradeOffersChannel = await client.channels.fetch(TRADEOFFERS_CHANNEL_ID);
+await tradeOffersChannel.send({ embeds: [tradeOfferEmbed], components: [offerRow] });
 
       // Optionally, reply to confirm offer sent
       await interaction.reply({ content: '✅ Trade offer sent!', ephemeral: true });
