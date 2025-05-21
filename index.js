@@ -38,10 +38,6 @@ const garageSchema = new mongoose.Schema({
 });
 const Garage = mongoose.model('Garage', garageSchema);
 
-const tradeListingSchema = new mongoose.Schema({
-  // ... rest of your trade schema ...
-});
-
 (async () => {
   try {
     await mongoose.connect(process.env.MONGO_URI, {
