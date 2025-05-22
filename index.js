@@ -457,8 +457,11 @@ client.on('interactionCreate', async (interaction) => {
 
         await interaction.reply({ content: 'Select a car from your garage to list for trade:', components: [row], flags: 64 });
       } catch (error) {
-        log(`DB ERROR in /trade: ${error}`);
-        await interaction.reply({ content: '❌ An error occurred. Please try again later.', flags: 64 });
+        console.error(error);
+        log(`DB ERROR in button handler: ${error.stack || error}`);
+        if (!interaction.replied && !interaction.deferred) {
+          await interaction.reply({ content: '❌ An error occurred. Please try again later.', flags: 64 });
+        }
       }
     }
 
@@ -545,6 +548,7 @@ client.on('interactionCreate', async (interaction) => {
 
   // --- Select Menu for /trade (car pick) ---
   if (interaction.isStringSelectMenu() && interaction.customId.startsWith("tradeSelect:")) {
+    const [action, userId] = interaction.customId.split(':');
     const [carNameEncoded, serial] = interaction.values[0].split('#');
     const carName = decodeURIComponent(carNameEncoded);
 
@@ -655,15 +659,15 @@ client.on('interactionCreate', async (interaction) => {
         .setColor(0x00AAFF);
 
       const offerRow = new ActionRowBuilder().addComponents(
-  new ButtonBuilder()
-    .setCustomId(`acceptOffer:${senderId}:${receiverId}:${msg.id}`)
-    .setLabel('✅ Accept')
-    .setStyle(ButtonStyle.Success),
-  new ButtonBuilder()
-    .setCustomId(`declineOffer:${senderId}:${receiverId}:${msg.id}`)
-    .setLabel('❌ Decline')
-    .setStyle(ButtonStyle.Danger)
-);
+        new ButtonBuilder()
+          .setCustomId(`acceptOffer:${senderId}:${receiverId}:${msg.id}`)
+          .setLabel('✅ Accept')
+          .setStyle(ButtonStyle.Success),
+        new ButtonBuilder()
+          .setCustomId(`declineOffer:${senderId}:${receiverId}:${msg.id}`)
+          .setLabel('❌ Decline')
+          .setStyle(ButtonStyle.Danger)
+      );
 
       const tradeOffersChannel = await client.channels.fetch(TRADEOFFERS_CHANNEL_ID);
       await tradeOffersChannel.send({ embeds: [tradeOfferEmbed], components: [offerRow] });
@@ -676,128 +680,134 @@ client.on('interactionCreate', async (interaction) => {
     }
   }
 
- // --- Button Handlers - PATCH: garage pagination flags and viewer/owner logic ---
-// DOUBLE CONFIRMATION FOR TRADE ACCEPT
-if (interaction.isButton()) {
-  try {
-    // Fixed garage pagination handler
-    if (interaction.customId.startsWith('garage:')) {
-      const [action, userId, pageStr] = interaction.customId.split(':');
-      const page = parseInt(pageStr, 10);
+  // --- Button Handlers: garage pagination, sendOffer, accept/decline/cancel offer ---
+  if (interaction.isButton()) {
+    const parts = interaction.customId.split(':');
+    const action = parts[0];
 
-      const userGarage = await Garage.findOne({ userId });
-      if (!userGarage || userGarage.cars.length === 0)
-        return interaction.reply({ content: '🚫 Garage is empty.', flags: 64 });
+    try {
+      // Garage pagination handler
+      if (action === 'garage') {
+        const [ , userId, pageStr ] = parts;
+        const page = parseInt(pageStr, 10);
 
-      const pages = chunkArray(userGarage.cars, 10);
-      const safePage = Math.max(0, Math.min(page, pages.length - 1));
+        const userGarage = await Garage.findOne({ userId });
+        if (!userGarage || userGarage.cars.length === 0)
+          return interaction.reply({ content: '🚫 Garage is empty.', flags: 64 });
 
-      const globalCount = calculateGlobalCounts(await Garage.find());
-      const garageOwnerUser = await client.users.fetch(userId);
+        const pages = chunkArray(userGarage.cars, 10);
+        const safePage = Math.max(0, Math.min(page, pages.length - 1));
 
-      const { embed, components } = renderGaragePage(
-        interaction.user.id, userGarage, globalCount, safePage, garageOwnerUser, userId, cars
-      );
-      await interaction.update({ embeds: [embed], components, flags: 64 });
-      return;
-    }
+        const globalCount = calculateGlobalCounts(await Garage.find());
+        const garageOwnerUser = await client.users.fetch(userId);
 
-    // Accept/Decline Trade Offer Handler - FIXED for messageId and double confirmation
-    // Format: acceptOffer:${senderId}:${receiverId}:${offerMsgId}
-    const [action, userId, otherId, offerMsgId, confirmFlag] = interaction.customId.split(':');
-    const carName = otherId ? decodeURIComponent(otherId) : undefined;
-
-    if (action === 'sendOffer') {
-      if (interaction.user.id === userId) {
-        return interaction.reply({ content: "❌ You can't send an offer to yourself.", flags: 64 });
-      }
-
-      const fromGarage = await Garage.findOne({ userId: interaction.user.id });
-      if (!fromGarage || fromGarage.cars.length === 0)
-        return interaction.reply({ content: '🚫 You have no cars to offer.', flags: 64 });
-
-      const carChoices = fromGarage.cars.map(c => ({
-        label: `${c.name} (#${c.serial})`,
-        value: `${encodeURIComponent(c.name)}#${c.serial}`
-      })).slice(0, 25);
-
-      const row = new ActionRowBuilder().addComponents(
-        new StringSelectMenuBuilder()
-          .setCustomId(`chooseOffer:${interaction.user.id}:${userId}:${encodeURIComponent(carName)}:${serial}`)
-          .setPlaceholder('Select a car to offer')
-          .addOptions(carChoices)
-      );
-
-      return interaction.reply({ content: 'Select a car to offer in trade:', components: [row], flags: 64 });
-    }
-
-    // --- DOUBLE CONFIRMATION LOGIC ---
-    if (action === 'acceptOffer') {
-      // If this is NOT a confirmation, prompt the user
-      if (confirmFlag !== 'confirmed') {
-        const row = new ActionRowBuilder().addComponents(
-          new ButtonBuilder()
-            .setCustomId(`acceptOffer:${userId}:${otherId}:${offerMsgId}:confirmed`)
-            .setLabel('✅ Yes, confirm trade')
-            .setStyle(ButtonStyle.Success),
-          new ButtonBuilder()
-            .setCustomId(`cancelTradeConfirm:${userId}:${otherId}:${offerMsgId}`)
-            .setLabel('❌ Cancel')
-            .setStyle(ButtonStyle.Danger)
+        const { embed, components } = renderGaragePage(
+          interaction.user.id, userGarage, globalCount, safePage, garageOwnerUser, userId, cars
         );
-        await interaction.reply({
-          content: 'Are you sure you want to accept this trade?\nThis action is **final** and will swap the cars between users.',
-          components: [row],
-          ephemeral: true
-        });
+        await interaction.update({ embeds: [embed], components, flags: 64 });
         return;
       }
 
-      // --- Actual trade logic, only runs on confirm! ---
-      const offer = await TradeOffer.findOneAndUpdate(
-        { messageId: offerMsgId, status: 'pending' },
-        { status: 'accepted' }
-      );
-      if (!offer) {
-        return interaction.reply({ content: '❌ Offer no longer valid.', flags: 64 });
+      // --- Send Offer Handler ---
+      if (action === 'sendOffer') {
+        const [ , listingOwnerId, carNameEncoded, serial ] = parts;
+        const carName = decodeURIComponent(carNameEncoded);
+
+        if (interaction.user.id === listingOwnerId) {
+          return interaction.reply({ content: "❌ You can't send an offer to yourself.", flags: 64 });
+        }
+
+        const fromGarage = await Garage.findOne({ userId: interaction.user.id });
+        if (!fromGarage || fromGarage.cars.length === 0)
+          return interaction.reply({ content: '🚫 You have no cars to offer.', flags: 64 });
+
+        const carChoices = fromGarage.cars.map(c => ({
+          label: `${c.name} (#${c.serial})`,
+          value: `${encodeURIComponent(c.name)}#${c.serial}`
+        })).slice(0, 25);
+
+        const row = new ActionRowBuilder().addComponents(
+          new StringSelectMenuBuilder()
+            .setCustomId(`chooseOffer:${interaction.user.id}:${listingOwnerId}:${encodeURIComponent(carName)}:${serial}`)
+            .setPlaceholder('Select a car to offer')
+            .addOptions(carChoices)
+        );
+
+        return interaction.reply({ content: 'Select a car to offer in trade:', components: [row], flags: 64 });
       }
 
-      const fromGarage = await Garage.findOne({ userId: offer.fromUserId });
-      const toGarage = await Garage.findOne({ userId: offer.toUserId });
+      // --- Accept/Decline/Cancel Offer Handler ---
+      if (action === 'acceptOffer' || action === 'declineOffer' || action === 'cancelTradeConfirm') {
+        const [ , senderId, receiverId, offerMsgId, confirmFlag ] = parts;
 
-      fromGarage.cars = fromGarage.cars.filter(
-        c => !(c.name === offer.offeredCar.name && c.serial === offer.offeredCar.serial)
-      );
-      toGarage.cars = toGarage.cars.filter(
-        c => !(c.name === offer.requestedCar.name && c.serial === offer.requestedCar.serial)
-      );
-      fromGarage.cars.push(offer.requestedCar);
-      toGarage.cars.push(offer.offeredCar);
-      await fromGarage.save();
-      await toGarage.save();
+        if (action === 'acceptOffer') {
+          // Double confirm
+          if (confirmFlag !== 'confirmed') {
+            const row = new ActionRowBuilder().addComponents(
+              new ButtonBuilder()
+                .setCustomId(`acceptOffer:${senderId}:${receiverId}:${offerMsgId}:confirmed`)
+                .setLabel('✅ Yes, confirm trade')
+                .setStyle(ButtonStyle.Success),
+              new ButtonBuilder()
+                .setCustomId(`cancelTradeConfirm:${senderId}:${receiverId}:${offerMsgId}`)
+                .setLabel('❌ Cancel')
+                .setStyle(ButtonStyle.Danger)
+            );
+            await interaction.reply({
+              content: 'Are you sure you want to accept this trade?\nThis action is **final** and will swap the cars between users.',
+              components: [row],
+              ephemeral: true
+            });
+            return;
+          }
 
-      await interaction.update({ content: '✅ Trade completed successfully!', components: [] });
-      return;
-    }
+          // --- Actual trade logic, only runs on confirm! ---
+          const offer = await TradeOffer.findOneAndUpdate(
+            { messageId: offerMsgId, status: 'pending' },
+            { status: 'accepted' }
+          );
+          if (!offer) {
+            return interaction.reply({ content: '❌ Offer no longer valid.', flags: 64 });
+          }
 
-    // --- Cancel confirmation handler ---
-    if (action === 'cancelTradeConfirm') {
-      await interaction.update({ content: '❌ Trade was not accepted.', components: [] });
-      return;
-    }
+          const fromGarage = await Garage.findOne({ userId: offer.fromUserId });
+          const toGarage = await Garage.findOne({ userId: offer.toUserId });
 
-    if (action === 'declineOffer') {
-      await TradeOffer.updateOne({ messageId: offerMsgId }, { status: 'declined' });
-      await interaction.update({ content: '❌ Trade declined.', components: [] });
-      return;
-    }
-  } catch (error) {
-    log(`DB ERROR in button handler: ${error}`);
-    if (!interaction.replied && !interaction.deferred) {
-      await interaction.reply({ content: '❌ An error occurred. Please try again later.', flags: 64 });
+          fromGarage.cars = fromGarage.cars.filter(
+            c => !(c.name === offer.offeredCar.name && c.serial === offer.offeredCar.serial)
+          );
+          toGarage.cars = toGarage.cars.filter(
+            c => !(c.name === offer.requestedCar.name && c.serial === offer.requestedCar.serial)
+          );
+          fromGarage.cars.push(offer.requestedCar);
+          toGarage.cars.push(offer.offeredCar);
+          await fromGarage.save();
+          await toGarage.save();
+
+          await interaction.update({ content: '✅ Trade completed successfully!', components: [] });
+          return;
+        }
+
+        // --- Cancel confirmation handler ---
+        if (action === 'cancelTradeConfirm') {
+          await interaction.update({ content: '❌ Trade was not accepted.', components: [] });
+          return;
+        }
+
+        // --- Decline handler ---
+        if (action === 'declineOffer') {
+          await TradeOffer.updateOne({ messageId: offerMsgId }, { status: 'declined' });
+          await interaction.update({ content: '❌ Trade declined.', components: [] });
+          return;
+        }
+      }
+    } catch (error) {
+      log(`DB ERROR in button handler: ${error}`);
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({ content: '❌ An error occurred. Please try again later.', flags: 64 });
+      }
     }
   }
-}
 });
 
 client.login(process.env.TOKEN);
