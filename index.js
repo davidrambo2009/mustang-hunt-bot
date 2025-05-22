@@ -443,16 +443,26 @@ client.on('interactionCreate', async (interaction) => {
         if (!garage || garage.cars.length === 0)
           return interaction.reply({ content: '🚫 Your garage is empty.', flags: 64 });
 
-        const carChoices = garage.cars.map(c => ({
-          label: `${c.name} (#${c.serial})`,
-          value: `${encodeURIComponent(c.name)}#${c.serial}`
-        })).slice(0, 25);
+        // DEDUPLICATION LOGIC HERE!
+        const uniqueChoices = new Set();
+        const carChoices = [];
+        for (const c of garage.cars) {
+          const value = `${encodeURIComponent(c.name)}#${c.serial}`;
+          if (!uniqueChoices.has(value)) {
+            uniqueChoices.add(value);
+            carChoices.push({
+              label: `${c.name} (#${c.serial})`,
+              value
+            });
+          }
+        }
+        const limitedCarChoices = carChoices.slice(0, 25);
 
         const row = new ActionRowBuilder().addComponents(
           new StringSelectMenuBuilder()
             .setCustomId(`tradeSelect:${userId}`)
             .setPlaceholder('Select a car to list for trade')
-            .addOptions(carChoices)
+            .addOptions(limitedCarChoices)
         );
 
         await interaction.reply({ content: 'Select a car from your garage to list for trade:', components: [row], flags: 64 });
@@ -723,16 +733,25 @@ client.on('interactionCreate', async (interaction) => {
         if (!fromGarage || fromGarage.cars.length === 0)
           return interaction.reply({ content: '🚫 You have no cars to offer.', flags: 64 });
 
-        const carChoices = fromGarage.cars.map(c => ({
-          label: `${c.name} (#${c.serial})`,
-          value: `${encodeURIComponent(c.name)}#${c.serial}`
-        })).slice(0, 25);
+        const uniqueChoices = new Set();
+        const carChoices = [];
+        for (const c of fromGarage.cars) {
+          const value = `${encodeURIComponent(c.name)}#${c.serial}`;
+          if (!uniqueChoices.has(value)) {
+            uniqueChoices.add(value);
+            carChoices.push({
+              label: `${c.name} (#${c.serial})`,
+              value
+            });
+          }
+        }
+        const limitedCarChoices = carChoices.slice(0, 25);
 
         const row = new ActionRowBuilder().addComponents(
           new StringSelectMenuBuilder()
             .setCustomId(`chooseOffer:${interaction.user.id}:${listingOwnerId}:${encodeURIComponent(carName)}:${serial}`)
             .setPlaceholder('Select a car to offer')
-            .addOptions(carChoices)
+            .addOptions(limitedCarChoices)
         );
 
         return interaction.reply({ content: 'Select a car to offer in trade:', components: [row], flags: 64 });
