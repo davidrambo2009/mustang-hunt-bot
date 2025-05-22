@@ -655,15 +655,15 @@ client.on('interactionCreate', async (interaction) => {
         .setColor(0x00AAFF);
 
       const offerRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId(`acceptOffer:${senderId}:${receiverId}`)
-          .setLabel('✅ Accept')
-          .setStyle(ButtonStyle.Success),
-        new ButtonBuilder()
-          .setCustomId(`declineOffer:${senderId}:${receiverId}`)
-          .setLabel('❌ Decline')
-          .setStyle(ButtonStyle.Danger)
-      );
+  new ButtonBuilder()
+    .setCustomId(`acceptOffer:${senderId}:${receiverId}:${msg.id}`)
+    .setLabel('✅ Accept')
+    .setStyle(ButtonStyle.Success),
+  new ButtonBuilder()
+    .setCustomId(`declineOffer:${senderId}:${receiverId}:${msg.id}`)
+    .setLabel('❌ Decline')
+    .setStyle(ButtonStyle.Danger)
+);
 
       const tradeOffersChannel = await client.channels.fetch(TRADEOFFERS_CHANNEL_ID);
       await tradeOffersChannel.send({ embeds: [tradeOfferEmbed], components: [offerRow] });
@@ -676,8 +676,9 @@ client.on('interactionCreate', async (interaction) => {
     }
   }
 
-  // --- Button Handlers - PATCH: garage pagination flags and viewer/owner logic ---
-  if (interaction.isButton()) {
+ // --- Button Handlers - PATCH: garage pagination flags and viewer/owner logic ---
+// DOUBLE CONFIRMATION FOR TRADE ACCEPT
+if (interaction.isButton()) {
   try {
     // Fixed garage pagination handler
     if (interaction.customId.startsWith('garage:')) {
@@ -701,9 +702,10 @@ client.on('interactionCreate', async (interaction) => {
       return;
     }
 
-    // For all other buttons, keep your original logic:
-    const [action, userId, carNameEncoded, serial] = interaction.customId.split(':');
-    const carName = carNameEncoded ? decodeURIComponent(carNameEncoded) : undefined;
+    // Accept/Decline Trade Offer Handler - FIXED for messageId and double confirmation
+    // Format: acceptOffer:${senderId}:${receiverId}:${offerMsgId}
+    const [action, userId, otherId, offerMsgId, confirmFlag] = interaction.customId.split(':');
+    const carName = otherId ? decodeURIComponent(otherId) : undefined;
 
     if (action === 'sendOffer') {
       if (interaction.user.id === userId) {
@@ -729,9 +731,31 @@ client.on('interactionCreate', async (interaction) => {
       return interaction.reply({ content: 'Select a car to offer in trade:', components: [row], flags: 64 });
     }
 
+    // --- DOUBLE CONFIRMATION LOGIC ---
     if (action === 'acceptOffer') {
+      // If this is NOT a confirmation, prompt the user
+      if (confirmFlag !== 'confirmed') {
+        const row = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`acceptOffer:${userId}:${otherId}:${offerMsgId}:confirmed`)
+            .setLabel('✅ Yes, confirm trade')
+            .setStyle(ButtonStyle.Success),
+          new ButtonBuilder()
+            .setCustomId(`cancelTradeConfirm:${userId}:${otherId}:${offerMsgId}`)
+            .setLabel('❌ Cancel')
+            .setStyle(ButtonStyle.Danger)
+        );
+        await interaction.reply({
+          content: 'Are you sure you want to accept this trade?\nThis action is **final** and will swap the cars between users.',
+          components: [row],
+          ephemeral: true
+        });
+        return;
+      }
+
+      // --- Actual trade logic, only runs on confirm! ---
       const offer = await TradeOffer.findOneAndUpdate(
-        { messageId: interaction.message.id, status: 'pending' },
+        { messageId: offerMsgId, status: 'pending' },
         { status: 'accepted' }
       );
       if (!offer) {
@@ -741,19 +765,31 @@ client.on('interactionCreate', async (interaction) => {
       const fromGarage = await Garage.findOne({ userId: offer.fromUserId });
       const toGarage = await Garage.findOne({ userId: offer.toUserId });
 
-      fromGarage.cars = fromGarage.cars.filter(c => !(c.name === offer.offeredCar.name && c.serial === offer.offeredCar.serial));
-      toGarage.cars = toGarage.cars.filter(c => !(c.name === offer.requestedCar.name && c.serial === offer.requestedCar.serial));
+      fromGarage.cars = fromGarage.cars.filter(
+        c => !(c.name === offer.offeredCar.name && c.serial === offer.offeredCar.serial)
+      );
+      toGarage.cars = toGarage.cars.filter(
+        c => !(c.name === offer.requestedCar.name && c.serial === offer.requestedCar.serial)
+      );
       fromGarage.cars.push(offer.requestedCar);
       toGarage.cars.push(offer.offeredCar);
       await fromGarage.save();
       await toGarage.save();
 
       await interaction.update({ content: '✅ Trade completed successfully!', components: [] });
+      return;
+    }
+
+    // --- Cancel confirmation handler ---
+    if (action === 'cancelTradeConfirm') {
+      await interaction.update({ content: '❌ Trade was not accepted.', components: [] });
+      return;
     }
 
     if (action === 'declineOffer') {
-      await TradeOffer.updateOne({ messageId: interaction.message.id }, { status: 'declined' });
+      await TradeOffer.updateOne({ messageId: offerMsgId }, { status: 'declined' });
       await interaction.update({ content: '❌ Trade declined.', components: [] });
+      return;
     }
   } catch (error) {
     log(`DB ERROR in button handler: ${error}`);
