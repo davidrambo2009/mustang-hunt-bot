@@ -678,86 +678,90 @@ client.on('interactionCreate', async (interaction) => {
 
   // --- Button Handlers - PATCH: garage pagination flags and viewer/owner logic ---
   if (interaction.isButton()) {
-    try {
-      const [action, userId, carNameEncoded, serial] = interaction.customId.split(':');
-      const carName = carNameEncoded ? decodeURIComponent(carNameEncoded) : undefined;
+  try {
+    // Fixed garage pagination handler
+    if (interaction.customId.startsWith('garage:')) {
+      const [action, userId, pageStr] = interaction.customId.split(':');
+      const page = parseInt(pageStr, 10);
 
-      if (action === 'garage') {
-        const page = parseInt(serial, 10);
-        const userGarage = await Garage.findOne({ userId });
-        if (!userGarage || userGarage.cars.length === 0)
-          return interaction.reply({ content: '🚫 Garage is empty.', flags: 64 });
+      const userGarage = await Garage.findOne({ userId });
+      if (!userGarage || userGarage.cars.length === 0)
+        return interaction.reply({ content: '🚫 Garage is empty.', flags: 64 });
 
-        const pages = chunkArray(userGarage.cars, 10);
-        const safePage = Math.max(0, Math.min(page, pages.length - 1));
+      const pages = chunkArray(userGarage.cars, 10);
+      const safePage = Math.max(0, Math.min(page, pages.length - 1));
 
-        const globalCount = calculateGlobalCounts(await Garage.find());
-        const garageOwnerUser = await client.users.fetch(userId);
+      const globalCount = calculateGlobalCounts(await Garage.find());
+      const garageOwnerUser = await client.users.fetch(userId);
 
-        const { embed, components } = renderGaragePage(
-          interaction.user.id, userGarage, globalCount, safePage, garageOwnerUser, userId, cars
-        );
-        await interaction.update({ embeds: [embed], components, flags: 64 });
-        return;
+      const { embed, components } = renderGaragePage(
+        interaction.user.id, userGarage, globalCount, safePage, garageOwnerUser, userId, cars
+      );
+      await interaction.update({ embeds: [embed], components, flags: 64 });
+      return;
+    }
+
+    // For all other buttons, keep your original logic:
+    const [action, userId, carNameEncoded, serial] = interaction.customId.split(':');
+    const carName = carNameEncoded ? decodeURIComponent(carNameEncoded) : undefined;
+
+    if (action === 'sendOffer') {
+      if (interaction.user.id === userId) {
+        return interaction.reply({ content: "❌ You can't send an offer to yourself.", flags: 64 });
       }
 
-      if (action === 'sendOffer') {
-        if (interaction.user.id === userId) {
-          return interaction.reply({ content: "❌ You can't send an offer to yourself.", flags: 64 });
-        }
+      const fromGarage = await Garage.findOne({ userId: interaction.user.id });
+      if (!fromGarage || fromGarage.cars.length === 0)
+        return interaction.reply({ content: '🚫 You have no cars to offer.', flags: 64 });
 
-        const fromGarage = await Garage.findOne({ userId: interaction.user.id });
-        if (!fromGarage || fromGarage.cars.length === 0)
-          return interaction.reply({ content: '🚫 You have no cars to offer.', flags: 64 });
+      const carChoices = fromGarage.cars.map(c => ({
+        label: `${c.name} (#${c.serial})`,
+        value: `${encodeURIComponent(c.name)}#${c.serial}`
+      })).slice(0, 25);
 
-        const carChoices = fromGarage.cars.map(c => ({
-          label: `${c.name} (#${c.serial})`,
-          value: `${encodeURIComponent(c.name)}#${c.serial}`
-        })).slice(0, 25);
+      const row = new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId(`chooseOffer:${interaction.user.id}:${userId}:${encodeURIComponent(carName)}:${serial}`)
+          .setPlaceholder('Select a car to offer')
+          .addOptions(carChoices)
+      );
 
-        const row = new ActionRowBuilder().addComponents(
-          new StringSelectMenuBuilder()
-            .setCustomId(`chooseOffer:${interaction.user.id}:${userId}:${encodeURIComponent(carName)}:${serial}`)
-            .setPlaceholder('Select a car to offer')
-            .addOptions(carChoices)
-        );
+      return interaction.reply({ content: 'Select a car to offer in trade:', components: [row], flags: 64 });
+    }
 
-        return interaction.reply({ content: 'Select a car to offer in trade:', components: [row], flags: 64 });
+    if (action === 'acceptOffer') {
+      const offer = await TradeOffer.findOneAndUpdate(
+        { messageId: interaction.message.id, status: 'pending' },
+        { status: 'accepted' }
+      );
+      if (!offer) {
+        return interaction.reply({ content: '❌ Offer no longer valid.', flags: 64 });
       }
 
-      if (action === 'acceptOffer') {
-        const offer = await TradeOffer.findOneAndUpdate(
-          { messageId: interaction.message.id, status: 'pending' },
-          { status: 'accepted' }
-        );
-        if (!offer) {
-          return interaction.reply({ content: '❌ Offer no longer valid.', flags: 64 });
-        }
+      const fromGarage = await Garage.findOne({ userId: offer.fromUserId });
+      const toGarage = await Garage.findOne({ userId: offer.toUserId });
 
-        const fromGarage = await Garage.findOne({ userId: offer.fromUserId });
-        const toGarage = await Garage.findOne({ userId: offer.toUserId });
+      fromGarage.cars = fromGarage.cars.filter(c => !(c.name === offer.offeredCar.name && c.serial === offer.offeredCar.serial));
+      toGarage.cars = toGarage.cars.filter(c => !(c.name === offer.requestedCar.name && c.serial === offer.requestedCar.serial));
+      fromGarage.cars.push(offer.requestedCar);
+      toGarage.cars.push(offer.offeredCar);
+      await fromGarage.save();
+      await toGarage.save();
 
-        fromGarage.cars = fromGarage.cars.filter(c => !(c.name === offer.offeredCar.name && c.serial === offer.offeredCar.serial));
-        toGarage.cars = toGarage.cars.filter(c => !(c.name === offer.requestedCar.name && c.serial === offer.requestedCar.serial));
-        fromGarage.cars.push(offer.requestedCar);
-        toGarage.cars.push(offer.offeredCar);
-        await fromGarage.save();
-        await toGarage.save();
+      await interaction.update({ content: '✅ Trade completed successfully!', components: [] });
+    }
 
-        await interaction.update({ content: '✅ Trade completed successfully!', components: [] });
-      }
-
-      if (action === 'declineOffer') {
-        await TradeOffer.updateOne({ messageId: interaction.message.id }, { status: 'declined' });
-        await interaction.update({ content: '❌ Trade declined.', components: [] });
-      }
-    } catch (error) {
-      log(`DB ERROR in button handler: ${error}`);
-      if (!interaction.replied && !interaction.deferred) {
-        await interaction.reply({ content: '❌ An error occurred. Please try again later.', flags: 64 });
-      }
+    if (action === 'declineOffer') {
+      await TradeOffer.updateOne({ messageId: interaction.message.id }, { status: 'declined' });
+      await interaction.update({ content: '❌ Trade declined.', components: [] });
+    }
+  } catch (error) {
+    log(`DB ERROR in button handler: ${error}`);
+    if (!interaction.replied && !interaction.deferred) {
+      await interaction.reply({ content: '❌ An error occurred. Please try again later.', flags: 64 });
     }
   }
+}
 });
 
 client.login(process.env.TOKEN);
