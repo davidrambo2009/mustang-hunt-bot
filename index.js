@@ -216,14 +216,14 @@ function calculateGlobalCounts(garages) {
   }
   return globalCount;
 }
+
+// --- renderGaragePage IMPROVEMENT: Always show both buttons, but disable as needed ---
 function renderGaragePage(garage, globalCount, pageIndex, targetUser, targetUserId, carsMeta) {
   const pages = chunkArray(garage.cars, 10);
 
-  // Clamp pageIndex to a valid range
   if (pageIndex < 0) pageIndex = 0;
   if (pageIndex > pages.length - 1) pageIndex = pages.length - 1;
 
-  // If garage is empty, show a message
   if (!pages.length || !pages[pageIndex]) {
     const embed = new EmbedBuilder()
       .setTitle(targetUser.id === targetUserId
@@ -250,11 +250,20 @@ function renderGaragePage(garage, globalCount, pageIndex, targetUser, targetUser
     .setDescription(list)
     .setColor(0x00BFFF);
 
-  const row = new ActionRowBuilder();
-  if (pageIndex > 0) row.addComponents(new ButtonBuilder().setCustomId(`garage:${targetUserId}:${pageIndex - 1}`).setLabel('⬅️ Prev').setStyle(ButtonStyle.Secondary));
-  if (pageIndex < pages.length - 1) row.addComponents(new ButtonBuilder().setCustomId(`garage:${targetUserId}:${pageIndex + 1}`).setLabel('Next ➡️').setStyle(ButtonStyle.Secondary));
-
-  return { embed, components: row.components.length ? [row] : [] };
+  const row = new ActionRowBuilder()
+    .addComponents(
+      new ButtonBuilder()
+        .setCustomId(`garage:${targetUserId}:${pageIndex - 1}`)
+        .setLabel('⬅️ Prev')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(pageIndex === 0),
+      new ButtonBuilder()
+        .setCustomId(`garage:${targetUserId}:${pageIndex + 1}`)
+        .setLabel('Next ➡️')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(pageIndex === pages.length - 1)
+    );
+  return { embed, components: pages.length > 1 ? [row] : [] };
 }
 
 function scheduleNextDrop(channel) {
@@ -535,7 +544,7 @@ client.on('interactionCreate', async (interaction) => {
     }
   }
 
-  // --- Select Menu for /trade (car pick) ---
+          // --- Select Menu for /trade (car pick) ---
   if (interaction.isStringSelectMenu() && interaction.customId.startsWith("tradeSelect:")) {
     const [carNameEncoded, serial] = interaction.values[0].split('#');
     const carName = decodeURIComponent(carNameEncoded);
@@ -675,41 +684,36 @@ client.on('interactionCreate', async (interaction) => {
     }
   }
 
-  // --- Button Handlers ---
+  // --- Button Handlers with EPHEMERAL ERROR REPLIES ---
   if (interaction.isButton()) {
     try {
       const [action, userId, carNameEncoded, serial] = interaction.customId.split(':');
       const carName = carNameEncoded ? decodeURIComponent(carNameEncoded) : undefined;
 
-     if (action === 'garage') {
-  const page = parseInt(serial); // serial represents the page number
-  const userGarage = await Garage.findOne({ userId });
-  if (!userGarage || userGarage.cars.length === 0)
-    return interaction.reply({ content: '🚫 Garage is empty.', ephemeral: true });
+      if (action === 'garage') {
+        const page = parseInt(serial);
+        const userGarage = await Garage.findOne({ userId });
+        if (!userGarage || userGarage.cars.length === 0)
+          return interaction.reply({ content: '🚫 Garage is empty.', ephemeral: true });
 
-  const pages = chunkArray(userGarage.cars, 10); // Add this line to calculate number of pages
-  // Clamp page to a valid range
-  const safePage = Math.max(0, Math.min(page, pages.length - 1)); // This is the important line!
+        const pages = chunkArray(userGarage.cars, 10);
+        const safePage = Math.max(0, Math.min(page, pages.length - 1));
 
-  userGarage.userId = userId;
-  const globalCount = calculateGlobalCounts(await Garage.find());
+        const globalCount = calculateGlobalCounts(await Garage.find());
+        const targetUser = await client.users.fetch(userId);
 
-  // For flipping pages, fetch correct user
-  const targetUser = await client.users.fetch(userId);
-
-  const { embed, components } = renderGaragePage(userGarage, globalCount, safePage, targetUser, userId, cars);
-  await interaction.update({ embeds: [embed], components });
-}
+        const { embed, components } = renderGaragePage(userGarage, globalCount, safePage, targetUser, userId, cars);
+        await interaction.update({ embeds: [embed], components });
+      }
 
       if (action === 'sendOffer') {
-        // Prevent sending offers to yourself
         if (interaction.user.id === userId) {
           return interaction.reply({ content: "❌ You can't send an offer to yourself.", ephemeral: true });
         }
 
         const fromGarage = await Garage.findOne({ userId: interaction.user.id });
         if (!fromGarage || fromGarage.cars.length === 0)
-          return interaction.reply({ content: '🚫 You have no cars to offer.', flags: 64 });
+          return interaction.reply({ content: '🚫 You have no cars to offer.', ephemeral: true });
 
         const carChoices = fromGarage.cars.map(c => ({
           label: `${c.name} (#${c.serial})`,
@@ -723,17 +727,16 @@ client.on('interactionCreate', async (interaction) => {
             .addOptions(carChoices)
         );
 
-        return interaction.reply({ content: 'Select a car to offer in trade:', components: [row], flags: 64 });
+        return interaction.reply({ content: 'Select a car to offer in trade:', components: [row], ephemeral: true });
       }
 
       if (action === 'acceptOffer') {
-        // Atomic update: Only accept if still pending
         const offer = await TradeOffer.findOneAndUpdate(
           { messageId: interaction.message.id, status: 'pending' },
           { status: 'accepted' }
         );
         if (!offer) {
-          return interaction.reply({ content: '❌ Offer no longer valid.', flags: 64 });
+          return interaction.reply({ content: '❌ Offer no longer valid.', ephemeral: true });
         }
 
         const fromGarage = await Garage.findOne({ userId: offer.fromUserId });
@@ -760,4 +763,4 @@ client.on('interactionCreate', async (interaction) => {
   }
 });
 
-client.login(process.env.TOKEN);
+client.login(process.env.TOKEN);    
