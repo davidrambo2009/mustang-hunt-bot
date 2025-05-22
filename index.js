@@ -217,18 +217,20 @@ function calculateGlobalCounts(garages) {
   return globalCount;
 }
 
-// --- renderGaragePage IMPROVEMENT: Always show both buttons, but disable as needed ---
-function renderGaragePage(garage, globalCount, pageIndex, targetUser, targetUserId, carsMeta) {
+// ===== FIXED renderGaragePage: takes viewerId, shows correct garage title =====
+function renderGaragePage(viewerId, garage, globalCount, pageIndex, garageOwnerUser, garageOwnerId, carsMeta) {
   const pages = chunkArray(garage.cars, 10);
 
+  // Clamp pageIndex to a valid range
   if (pageIndex < 0) pageIndex = 0;
   if (pageIndex > pages.length - 1) pageIndex = pages.length - 1;
 
+  // If garage is empty, show a message
   if (!pages.length || !pages[pageIndex]) {
     const embed = new EmbedBuilder()
-      .setTitle(targetUser.id === targetUserId
+      .setTitle(viewerId === garageOwnerId
         ? `🚗 Your Garage (0 cars)`
-        : `🚗 ${targetUser.username}'s Garage`)
+        : `🚗 ${garageOwnerUser.username}'s Garage`)
       .setDescription('No cars found.')
       .setColor(0x00BFFF);
     return { embed, components: [] };
@@ -244,26 +246,29 @@ function renderGaragePage(garage, globalCount, pageIndex, targetUser, targetUser
   }).join('\n');
 
   const embed = new EmbedBuilder()
-    .setTitle(targetUser.id === targetUserId
+    .setTitle(viewerId === garageOwnerId
       ? `🚗 Your Garage (${garage.cars.length} cars) - Page ${pageIndex + 1}/${pages.length}`
-      : `🚗 ${targetUser.username}'s Garage - Page ${pageIndex + 1}/${pages.length}`)
+      : `🚗 ${garageOwnerUser.username}'s Garage - Page ${pageIndex + 1}/${pages.length}`)
     .setDescription(list)
     .setColor(0x00BFFF);
 
-  const row = new ActionRowBuilder()
-    .addComponents(
+  const row = new ActionRowBuilder();
+  if (pageIndex > 0)
+    row.addComponents(
       new ButtonBuilder()
-        .setCustomId(`garage:${targetUserId}:${pageIndex - 1}`)
+        .setCustomId(`garage:${garageOwnerId}:${pageIndex - 1}`)
         .setLabel('⬅️ Prev')
         .setStyle(ButtonStyle.Secondary)
-        .setDisabled(pageIndex === 0),
+    );
+  if (pageIndex < pages.length - 1)
+    row.addComponents(
       new ButtonBuilder()
-        .setCustomId(`garage:${targetUserId}:${pageIndex + 1}`)
+        .setCustomId(`garage:${garageOwnerId}:${pageIndex + 1}`)
         .setLabel('Next ➡️')
         .setStyle(ButtonStyle.Secondary)
-        .setDisabled(pageIndex === pages.length - 1)
     );
-  return { embed, components: pages.length > 1 ? [row] : [] };
+
+  return { embed, components: row.components.length ? [row] : [] };
 }
 
 function scheduleNextDrop(channel) {
@@ -495,17 +500,18 @@ client.on('interactionCreate', async (interaction) => {
       }
     }
 
+    // ==== /garage - FIXED: Pass viewer vs. owner ====
     if (commandName === 'garage') {
       if (channel.id !== GARAGE_CHANNEL_ID) return interaction.reply({ content: '❌ Use /garage in the garage channel.', ephemeral: true });
       try {
-        const target = options.getUser('user') || user;
+        const target = options.getUser('user') || user; // garage owner
         const garage = await Garage.findOne({ userId: target.id });
         if (!garage || garage.cars.length === 0) return interaction.reply({ content: '🚫 Garage is empty.', ephemeral: true });
 
         const all = await Garage.find();
         const globalCount = calculateGlobalCounts(all);
-        // Pass target as both user and userId for correct garage view!
-        const { embed, components } = renderGaragePage(garage, globalCount, 0, target, target.id, cars);
+        // viewerId = user.id (person running the command), target is owner
+        const { embed, components } = renderGaragePage(user.id, garage, globalCount, 0, target, target.id, cars);
 
         await interaction.reply({ embeds: [embed], components, ephemeral: false });
       } catch (error) {
@@ -544,7 +550,7 @@ client.on('interactionCreate', async (interaction) => {
     }
   }
 
-          // --- Select Menu for /trade (car pick) ---
+     // --- Select Menu for /trade (car pick) ---
   if (interaction.isStringSelectMenu() && interaction.customId.startsWith("tradeSelect:")) {
     const [carNameEncoded, serial] = interaction.values[0].split('#');
     const carName = decodeURIComponent(carNameEncoded);
@@ -684,15 +690,15 @@ client.on('interactionCreate', async (interaction) => {
     }
   }
 
-  // --- Button Handlers with EPHEMERAL ERROR REPLIES ---
+  // --- Button Handlers - FIXED garage button handler to use viewer vs. owner ---
   if (interaction.isButton()) {
     try {
       const [action, userId, carNameEncoded, serial] = interaction.customId.split(':');
       const carName = carNameEncoded ? decodeURIComponent(carNameEncoded) : undefined;
 
       if (action === 'garage') {
-        const page = parseInt(serial);
-        const userGarage = await Garage.findOne({ userId });
+        const page = parseInt(serial); // serial represents the page number from the button customId
+        const userGarage = await Garage.findOne({ userId }); // userId is the garage owner's id from button customId
         if (!userGarage || userGarage.cars.length === 0)
           return interaction.reply({ content: '🚫 Garage is empty.', ephemeral: true });
 
@@ -700,20 +706,22 @@ client.on('interactionCreate', async (interaction) => {
         const safePage = Math.max(0, Math.min(page, pages.length - 1));
 
         const globalCount = calculateGlobalCounts(await Garage.find());
-        const targetUser = await client.users.fetch(userId);
+        const garageOwnerUser = await client.users.fetch(userId); // fetch the correct user for the garage
 
-        const { embed, components } = renderGaragePage(userGarage, globalCount, safePage, targetUser, userId, cars);
+        // interaction.user.id is the viewer; userId is the owner
+        const { embed, components } = renderGaragePage(interaction.user.id, userGarage, globalCount, safePage, garageOwnerUser, userId, cars);
         await interaction.update({ embeds: [embed], components });
       }
 
       if (action === 'sendOffer') {
+        // Prevent sending offers to yourself
         if (interaction.user.id === userId) {
           return interaction.reply({ content: "❌ You can't send an offer to yourself.", ephemeral: true });
         }
 
         const fromGarage = await Garage.findOne({ userId: interaction.user.id });
         if (!fromGarage || fromGarage.cars.length === 0)
-          return interaction.reply({ content: '🚫 You have no cars to offer.', ephemeral: true });
+          return interaction.reply({ content: '🚫 You have no cars to offer.', flags: 64 });
 
         const carChoices = fromGarage.cars.map(c => ({
           label: `${c.name} (#${c.serial})`,
@@ -727,16 +735,17 @@ client.on('interactionCreate', async (interaction) => {
             .addOptions(carChoices)
         );
 
-        return interaction.reply({ content: 'Select a car to offer in trade:', components: [row], ephemeral: true });
+        return interaction.reply({ content: 'Select a car to offer in trade:', components: [row], flags: 64 });
       }
 
       if (action === 'acceptOffer') {
+        // Atomic update: Only accept if still pending
         const offer = await TradeOffer.findOneAndUpdate(
           { messageId: interaction.message.id, status: 'pending' },
           { status: 'accepted' }
         );
         if (!offer) {
-          return interaction.reply({ content: '❌ Offer no longer valid.', ephemeral: true });
+          return interaction.reply({ content: '❌ Offer no longer valid.', flags: 64 });
         }
 
         const fromGarage = await Garage.findOne({ userId: offer.fromUserId });
@@ -763,4 +772,4 @@ client.on('interactionCreate', async (interaction) => {
   }
 });
 
-client.login(process.env.TOKEN);    
+client.login(process.env.TOKEN);       
