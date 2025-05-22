@@ -457,6 +457,8 @@ client.on('interactionCreate', async (interaction) => {
 
         await interaction.reply({ content: 'Select a car from your garage to list for trade:', components: [row], flags: 64 });
       } catch (error) {
+        log(`DB ERROR in /trade: ${error}`);
+        await interaction.reply({ content: '❌ An error occurred. Please try again later.', flags: 64 });
         console.error(error);
         log(`DB ERROR in button handler: ${error.stack || error}`);
         if (!interaction.replied && !interaction.deferred) {
@@ -801,6 +803,7 @@ client.on('interactionCreate', async (interaction) => {
           return;
         }
       }
+
     } catch (error) {
       log(`DB ERROR in button handler: ${error}`);
       if (!interaction.replied && !interaction.deferred) {
