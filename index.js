@@ -95,8 +95,8 @@ const Garage = mongoose.model('Garage', garageSchema);
       return; // Important: stop further bot startup if migration runs
     }
 
-    // ...rest of your bot startup code goes here...
-
+    // ---- Start Discord bot after DB ready ----
+    client.login(process.env.TOKEN);
   } catch (err) {
     log('❌ MongoDB connection error: ' + err);
   }
@@ -217,15 +217,12 @@ function calculateGlobalCounts(garages) {
   return globalCount;
 }
 
-// ===== FIXED renderGaragePage: takes viewerId, shows correct garage title =====
 function renderGaragePage(viewerId, garage, globalCount, pageIndex, garageOwnerUser, garageOwnerId, carsMeta) {
   const pages = chunkArray(garage.cars, 10);
 
-  // Clamp pageIndex to a valid range
   if (pageIndex < 0) pageIndex = 0;
   if (pageIndex > pages.length - 1) pageIndex = pages.length - 1;
 
-  // If garage is empty, show a message
   if (!pages.length || !pages[pageIndex]) {
     const embed = new EmbedBuilder()
       .setTitle(viewerId === garageOwnerId
@@ -385,7 +382,7 @@ client.on('interactionCreate', async (interaction) => {
         .setFooter({ text: 'Tip: Use /trade only in the trade-commands channel; listings appear in #trade-posts.' })
         .setColor(0x00BFFF);
 
-      return interaction.reply({ embeds: [embed], ephemeral: true });
+      return interaction.reply({ embeds: [embed], flags: 64 });
     }
 
     // ==== /trade channel restriction ====
@@ -393,22 +390,20 @@ client.on('interactionCreate', async (interaction) => {
       if (interaction.channel.id !== TRADE_COMMAND_CHANNEL_ID) {
         return interaction.reply({
           content: `❌ Please use this command in <#${TRADE_COMMAND_CHANNEL_ID}>.`,
-          ephemeral: true
+          flags: 64
         });
       }
     }
 
-    // --- The rest of your unchanged command bodies ---
-
     if (commandName === 'claim') {
       const now = Date.now();
       if (claimCooldowns.has(userId) && (now - claimCooldowns.get(userId)) < 10000) {
-        return interaction.reply({ content: '⏳ You must wait 10 seconds between claims.', ephemeral: true });
+        return interaction.reply({ content: '⏳ You must wait 10 seconds between claims.', flags: 64 });
       }
       claimCooldowns.set(userId, now);
 
-      if (!activeDrop) return interaction.reply({ content: '❌ No car to claim.', ephemeral: true });
-      if (activeDrop.claimed) return interaction.reply({ content: '⚠️ Already claimed.', ephemeral: true });
+      if (!activeDrop) return interaction.reply({ content: '❌ No car to claim.', flags: 64 });
+      if (activeDrop.claimed) return interaction.reply({ content: '⚠️ Already claimed.', flags: 64 });
       if (claimingUsers.has(userId)) return;
       claimingUsers.add(userId);
       try {
@@ -436,7 +431,7 @@ client.on('interactionCreate', async (interaction) => {
         await interaction.reply({ content: '✅ You claimed the car!', flags: 64 });
       } catch (error) {
         log(`DB ERROR in /claim: ${error}`);
-        await interaction.reply({ content: '❌ An error occurred. Please try again later.', ephemeral: true });
+        await interaction.reply({ content: '❌ An error occurred. Please try again later.', flags: 64 });
       } finally {
         claimingUsers.delete(userId);
       }
@@ -446,7 +441,7 @@ client.on('interactionCreate', async (interaction) => {
       try {
         const garage = await Garage.findOne({ userId });
         if (!garage || garage.cars.length === 0)
-          return interaction.reply({ content: '🚫 Your garage is empty.', ephemeral: true });
+          return interaction.reply({ content: '🚫 Your garage is empty.', flags: 64 });
 
         const carChoices = garage.cars.map(c => ({
           label: `${c.name} (#${c.serial})`,
@@ -460,17 +455,17 @@ client.on('interactionCreate', async (interaction) => {
             .addOptions(carChoices)
         );
 
-        await interaction.reply({ content: 'Select a car from your garage to list for trade:', components: [row], ephemeral: true });
+        await interaction.reply({ content: 'Select a car from your garage to list for trade:', components: [row], flags: 64 });
       } catch (error) {
         log(`DB ERROR in /trade: ${error}`);
-        await interaction.reply({ content: '❌ An error occurred. Please try again later.', ephemeral: true });
+        await interaction.reply({ content: '❌ An error occurred. Please try again later.', flags: 64 });
       }
     }
 
     if (commandName === 'canceltrade') {
       try {
         const listings = await TradeListing.find({ userId, active: true });
-        if (!listings.length) return interaction.reply({ content: '🚫 No active listings found.', ephemeral: true });
+        if (!listings.length) return interaction.reply({ content: '🚫 No active listings found.', flags: 64 });
 
         const channel = await client.channels.fetch(TRADE_POSTS_CHANNEL_ID);
         for (const listing of listings) {
@@ -482,53 +477,51 @@ client.on('interactionCreate', async (interaction) => {
           }
           await TradeListing.findByIdAndUpdate(listing._id, { active: false });
         }
-        await interaction.reply({ content: '🗑️ All active listings canceled.', ephemeral: true });
+        await interaction.reply({ content: '🗑️ All active listings canceled.', flags: 64 });
       } catch (error) {
         log(`DB ERROR in /canceltrade: ${error}`);
-        await interaction.reply({ content: '❌ An error occurred. Please try again later.', ephemeral: true });
+        await interaction.reply({ content: '❌ An error occurred. Please try again later.', flags: 64 });
       }
     }
 
     if (commandName === 'drop') {
-      if (!member.permissions.has(PermissionFlagsBits.Administrator)) return interaction.reply({ content: '❌ No permission.', ephemeral: true });
+      if (!member.permissions.has(PermissionFlagsBits.Administrator)) return interaction.reply({ content: '❌ No permission.', flags: 64 });
       try {
         dropCar(channel);
-        return interaction.reply({ content: '🚗 Car dropped.', ephemeral: true });
+        return interaction.reply({ content: '🚗 Car dropped.', flags: 64 });
       } catch (error) {
         log(`ERROR in /drop: ${error}`);
-        return interaction.reply({ content: '❌ An error occurred dropping the car.', ephemeral: true });
+        return interaction.reply({ content: '❌ An error occurred dropping the car.', flags: 64 });
       }
     }
 
-    // ==== /garage - FIXED: Pass viewer vs. owner ====
     if (commandName === 'garage') {
-      if (channel.id !== GARAGE_CHANNEL_ID) return interaction.reply({ content: '❌ Use /garage in the garage channel.', ephemeral: true });
+      if (channel.id !== GARAGE_CHANNEL_ID) return interaction.reply({ content: '❌ Use /garage in the garage channel.', flags: 64 });
       try {
         const target = options.getUser('user') || user; // garage owner
         const garage = await Garage.findOne({ userId: target.id });
-        if (!garage || garage.cars.length === 0) return interaction.reply({ content: '🚫 Garage is empty.', ephemeral: true });
+        if (!garage || garage.cars.length === 0) return interaction.reply({ content: '🚫 Garage is empty.', flags: 64 });
 
         const all = await Garage.find();
         const globalCount = calculateGlobalCounts(all);
-        // viewerId = user.id (person running the command), target is owner
         const { embed, components } = renderGaragePage(user.id, garage, globalCount, 0, target, target.id, cars);
 
-        await interaction.reply({ embeds: [embed], components, ephemeral: false });
+        await interaction.reply({ embeds: [embed], components, flags: 64 });
       } catch (error) {
         log(`DB ERROR in /garage: ${error}`);
-        await interaction.reply({ content: '❌ An error occurred. Please try again later.', ephemeral: true });
+        await interaction.reply({ content: '❌ An error occurred. Please try again later.', flags: 64 });
       }
     }
 
     if (commandName === 'resetgarage') {
-      if (!member.permissions.has(PermissionFlagsBits.Administrator)) return interaction.reply({ content: '❌ No permission.', ephemeral: true });
+      if (!member.permissions.has(PermissionFlagsBits.Administrator)) return interaction.reply({ content: '❌ No permission.', flags: 64 });
       try {
         const target = options.getUser('user');
         await Garage.findOneAndUpdate({ userId: target.id }, { cars: [] }, { upsert: true });
-        return interaction.reply({ content: `♻️ Reset ${target.username}'s garage.`, ephemeral: true });
+        return interaction.reply({ content: `♻️ Reset ${target.username}'s garage.`, flags: 64 });
       } catch (error) {
         log(`DB ERROR in /resetgarage: ${error}`);
-        return interaction.reply({ content: '❌ An error occurred. Please try again later.', ephemeral: true });
+        return interaction.reply({ content: '❌ An error occurred. Please try again later.', flags: 64 });
       }
     }
 
@@ -542,15 +535,15 @@ client.on('interactionCreate', async (interaction) => {
         await interaction.reply({ content: `📊 **Bot Stats**
 • 👥 Users: **${users}**
 • 🚗 Total Cars: **${carsTotal}**
-• ⏱️ Uptime: **${h}h ${m}m ${s}s**`, ephemeral: false });
+• ⏱️ Uptime: **${h}h ${m}m ${s}s**`, flags: 64 });
       } catch (error) {
         log(`DB ERROR in /stats: ${error}`);
-        await interaction.reply({ content: '❌ An error occurred. Please try again later.', ephemeral: true });
+        await interaction.reply({ content: '❌ An error occurred. Please try again later.', flags: 64 });
       }
     }
   }
 
-     // --- Select Menu for /trade (car pick) ---
+  // --- Select Menu for /trade (car pick) ---
   if (interaction.isStringSelectMenu() && interaction.customId.startsWith("tradeSelect:")) {
     const [carNameEncoded, serial] = interaction.values[0].split('#');
     const carName = decodeURIComponent(carNameEncoded);
@@ -581,9 +574,8 @@ client.on('interactionCreate', async (interaction) => {
     const note = interaction.fields.getTextInputValue('tradeNote') || '';
     try {
       const userId = interaction.user.id;
-      // Now allows up to 5 active listings
       const activeListings = await TradeListing.countDocuments({ userId, active: true });
-      if (activeListings >= 5) return interaction.reply({ content: '⚠️ You already have 5 active listings.', ephemeral: true });
+      if (activeListings >= 5) return interaction.reply({ content: '⚠️ You already have 5 active listings.', flags: 64 });
 
       const tradeChannel = await client.channels.fetch(TRADE_POSTS_CHANNEL_ID);
       const embed = new EmbedBuilder()
@@ -607,7 +599,6 @@ client.on('interactionCreate', async (interaction) => {
         messageId: msg.id
       }).save();
 
-      // listing disappears after 6 hours
       setTimeout(async () => {
         try {
           await TradeListing.findOneAndUpdate({ messageId: msg.id }, { active: false });
@@ -618,10 +609,10 @@ client.on('interactionCreate', async (interaction) => {
         }
       }, 6 * 60 * 60 * 1000);
 
-      await interaction.reply({ content: `✅ Trade listing posted to <#${TRADE_POSTS_CHANNEL_ID}>!`, ephemeral: true });
+      await interaction.reply({ content: `✅ Trade listing posted to <#${TRADE_POSTS_CHANNEL_ID}>!`, flags: 64 });
     } catch (error) {
       log(`DB ERROR in tradeNoteModal: ${error}`);
-      await interaction.reply({ content: '❌ An error occurred. Please try again later.', ephemeral: true });
+      await interaction.reply({ content: '❌ An error occurred. Please try again later.', flags: 64 });
     }
     return;
   }
@@ -636,15 +627,13 @@ client.on('interactionCreate', async (interaction) => {
       const [offeredNameEncoded, offeredSerial] = selected.split('#');
       const offeredName = decodeURIComponent(offeredNameEncoded);
 
-      // Validate serial numbers
       const parsedSerial = parseInt(serial, 10);
       const parsedOfferedSerial = parseInt(offeredSerial, 10);
       if (isNaN(parsedSerial) || isNaN(parsedOfferedSerial)) {
         log(`Invalid serial(s): offeredSerial=${offeredSerial}, requestedSerial=${serial}, customId=${interaction.customId}, selected=${selected}`);
-        return interaction.reply({ content: '❌ Invalid car serial number detected in trade.', ephemeral: true });
+        return interaction.reply({ content: '❌ Invalid car serial number detected in trade.', flags: 64 });
       }
 
-      // Proceed with the trade offer creation
       await new TradeOffer({
         fromUserId: senderId,
         toUserId: receiverId,
@@ -652,7 +641,7 @@ client.on('interactionCreate', async (interaction) => {
         requestedCar: { name: carName, serial: parsedSerial },
         messageId: msg.id
       }).save();
-      // Fetch user objects for display names (optional, but nice)
+
       const sender = await client.users.fetch(senderId);
       const receiver = await client.users.fetch(receiverId);
 
@@ -667,7 +656,7 @@ client.on('interactionCreate', async (interaction) => {
 
       const offerRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-          .setCustomId(`acceptOffer:${senderId}:${receiverId}`) // add more info if you want
+          .setCustomId(`acceptOffer:${senderId}:${receiverId}`)
           .setLabel('✅ Accept')
           .setStyle(ButtonStyle.Success),
         new ButtonBuilder()
@@ -676,47 +665,45 @@ client.on('interactionCreate', async (interaction) => {
           .setStyle(ButtonStyle.Danger)
       );
 
-      // Send to the trade offers channel
       const tradeOffersChannel = await client.channels.fetch(TRADEOFFERS_CHANNEL_ID);
       await tradeOffersChannel.send({ embeds: [tradeOfferEmbed], components: [offerRow] });
 
-      // Optionally, reply to confirm offer sent
-      await interaction.reply({ content: '✅ Trade offer sent!', ephemeral: true });
+      await interaction.reply({ content: '✅ Trade offer sent!', flags: 64 });
 
     } catch (err) {
-      log('DB ERROR in select menu: ' + err +
-        ` | senderId=${senderId}, receiverId=${receiverId}, carName=${carNameEncoded}, serial=${serial}, offeredName=${offeredNameEncoded}, offeredSerial=${offeredSerial}`);
-      return interaction.reply({ content: '❌ Something went wrong when processing the trade offer.', ephemeral: true });
+      log('DB ERROR in select menu: ' + err);
+      return interaction.reply({ content: '❌ Something went wrong when processing the trade offer.', flags: 64 });
     }
   }
 
-  // --- Button Handlers - FIXED garage button handler to use viewer vs. owner ---
+  // --- Button Handlers - PATCH: garage pagination flags and viewer/owner logic ---
   if (interaction.isButton()) {
     try {
       const [action, userId, carNameEncoded, serial] = interaction.customId.split(':');
       const carName = carNameEncoded ? decodeURIComponent(carNameEncoded) : undefined;
 
       if (action === 'garage') {
-        const page = parseInt(serial); // serial represents the page number from the button customId
-        const userGarage = await Garage.findOne({ userId }); // userId is the garage owner's id from button customId
+        const page = parseInt(serial, 10);
+        const userGarage = await Garage.findOne({ userId });
         if (!userGarage || userGarage.cars.length === 0)
-          return interaction.reply({ content: '🚫 Garage is empty.', ephemeral: true });
+          return interaction.reply({ content: '🚫 Garage is empty.', flags: 64 });
 
         const pages = chunkArray(userGarage.cars, 10);
         const safePage = Math.max(0, Math.min(page, pages.length - 1));
 
         const globalCount = calculateGlobalCounts(await Garage.find());
-        const garageOwnerUser = await client.users.fetch(userId); // fetch the correct user for the garage
+        const garageOwnerUser = await client.users.fetch(userId);
 
-        // interaction.user.id is the viewer; userId is the owner
-        const { embed, components } = renderGaragePage(interaction.user.id, userGarage, globalCount, safePage, garageOwnerUser, userId, cars);
-        await interaction.update({ embeds: [embed], components });
+        const { embed, components } = renderGaragePage(
+          interaction.user.id, userGarage, globalCount, safePage, garageOwnerUser, userId, cars
+        );
+        await interaction.update({ embeds: [embed], components, flags: 64 });
+        return;
       }
 
       if (action === 'sendOffer') {
-        // Prevent sending offers to yourself
         if (interaction.user.id === userId) {
-          return interaction.reply({ content: "❌ You can't send an offer to yourself.", ephemeral: true });
+          return interaction.reply({ content: "❌ You can't send an offer to yourself.", flags: 64 });
         }
 
         const fromGarage = await Garage.findOne({ userId: interaction.user.id });
@@ -739,7 +726,6 @@ client.on('interactionCreate', async (interaction) => {
       }
 
       if (action === 'acceptOffer') {
-        // Atomic update: Only accept if still pending
         const offer = await TradeOffer.findOneAndUpdate(
           { messageId: interaction.message.id, status: 'pending' },
           { status: 'accepted' }
@@ -767,9 +753,11 @@ client.on('interactionCreate', async (interaction) => {
       }
     } catch (error) {
       log(`DB ERROR in button handler: ${error}`);
-      await interaction.reply({ content: '❌ An error occurred. Please try again later.', ephemeral: true });
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({ content: '❌ An error occurred. Please try again later.', flags: 64 });
+      }
     }
   }
 });
 
-client.login(process.env.TOKEN);       
+client.login(process.env.TOKEN);
