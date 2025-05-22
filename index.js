@@ -30,7 +30,6 @@ const GARAGE_CHANNEL_ID = '1372749137413668884';
 const TRADE_POSTS_CHANNEL_ID = '1374486602012692581';
 const TRADEOFFERS_CHANNEL_ID = '1374486704387264512';
 const TRADE_COMMAND_CHANNEL_ID = '1374623379406979134';
-const TRADE_HISTORY_CHANNEL_ID = '1375198378039705651';
 const GUILD_ID = '1370450475400302686';
 
 const garageSchema = new mongoose.Schema({
@@ -297,24 +296,6 @@ Use \`/claim\` in 1 minute!`)
   });
 }
 
-async function logTradeHistory({ fromUser, toUser, offeredCar, requestedCar, status }) {
-  const channel = await client.channels.fetch(TRADE_HISTORY_CHANNEL_ID);
-  let color = status === 'completed' ? 0x00FF00 : 0xFF0000;
-  let statusText = status === 'completed' ? 'Trade Completed!' : 'Trade Declined';
-  const embed = new EmbedBuilder()
-    .setTitle('Trade History')
-    .setColor(color)
-    .setDescription(
-      `**Status:** ${statusText}\n\n` +
-      `**From:** ${fromUser.username} (<@${fromUser.id}>)\n` +
-      `• Offered: **${offeredCar.name}** (#${offeredCar.serial})\n\n` +
-      `**To:** ${toUser.username} (<@${toUser.id}>)\n` +
-      `• Requested: **${requestedCar.name}** (#${requestedCar.serial})`
-    )
-    .setTimestamp();
-  await channel.send({ embeds: [embed] });
-}
-
 client.once('ready', async () => {
   log(`🟢 Logged in as ${client.user.tag}`);
   try {
@@ -359,6 +340,7 @@ client.on('interactionCreate', async (interaction) => {
     const { commandName, user, channel, options, member } = interaction;
     const userId = user.id;
 
+    // ==== /help ====
     if (commandName === 'help') {
       const embed = new EmbedBuilder()
         .setTitle('🚦 Mustang Hunt Bot Help')
@@ -403,6 +385,7 @@ client.on('interactionCreate', async (interaction) => {
       return interaction.reply({ embeds: [embed], flags: 64 });
     }
 
+    // ==== /trade channel restriction ====
     if (commandName === 'trade') {
       if (interaction.channel.id !== TRADE_COMMAND_CHANNEL_ID) {
         return interaction.reply({
@@ -757,20 +740,6 @@ client.on('interactionCreate', async (interaction) => {
       if (action === 'acceptOffer' || action === 'declineOffer' || action === 'cancelTradeConfirm') {
         const [ , senderId, receiverId, offerMsgId, confirmFlag ] = parts;
 
-        // Find the offer and also find the original trade post/listing (if it exists)
-        const offer = await TradeOffer.findOne({ messageId: offerMsgId });
-
-        // Find the matching trade post/listing if possible
-        let tradeListing = null;
-        if (offer) {
-          tradeListing = await TradeListing.findOne({
-            userId: offer.toUserId,
-            'car.name': offer.requestedCar.name,
-            'car.serial': offer.requestedCar.serial
-          });
-        }
-
-        // Accept logic
         if (action === 'acceptOffer') {
           // Double confirm
           if (confirmFlag !== 'confirmed') {
@@ -793,72 +762,27 @@ client.on('interactionCreate', async (interaction) => {
           }
 
           // --- Actual trade logic, only runs on confirm! ---
-          const updatedOffer = await TradeOffer.findOneAndUpdate(
+          const offer = await TradeOffer.findOneAndUpdate(
             { messageId: offerMsgId, status: 'pending' },
             { status: 'accepted' }
           );
-          if (!updatedOffer) {
+          if (!offer) {
             return interaction.reply({ content: '❌ Offer no longer valid.', flags: 64 });
           }
 
-          const fromGarage = await Garage.findOne({ userId: updatedOffer.fromUserId });
-          const toGarage = await Garage.findOne({ userId: updatedOffer.toUserId });
+          const fromGarage = await Garage.findOne({ userId: offer.fromUserId });
+          const toGarage = await Garage.findOne({ userId: offer.toUserId });
 
           fromGarage.cars = fromGarage.cars.filter(
-            c => !(c.name === updatedOffer.offeredCar.name && c.serial === updatedOffer.offeredCar.serial)
+            c => !(c.name === offer.offeredCar.name && c.serial === offer.offeredCar.serial)
           );
           toGarage.cars = toGarage.cars.filter(
-            c => !(c.name === updatedOffer.requestedCar.name && c.serial === updatedOffer.requestedCar.serial)
+            c => !(c.name === offer.requestedCar.name && c.serial === offer.requestedCar.serial)
           );
-          fromGarage.cars.push(updatedOffer.requestedCar);
-          toGarage.cars.push(updatedOffer.offeredCar);
+          fromGarage.cars.push(offer.requestedCar);
+          toGarage.cars.push(offer.offeredCar);
           await fromGarage.save();
           await toGarage.save();
-
-          // Edit trade offer message in trade-offers channel
-          try {
-            const tradeOffersChannel = await client.channels.fetch(TRADEOFFERS_CHANNEL_ID);
-            const offerMsg = await tradeOffersChannel.messages.fetch(offerMsgId);
-            await offerMsg.edit({
-              embeds: [
-                EmbedBuilder.from(offerMsg.embeds[0])
-                  .setColor(0x00FF00)
-                  .setFooter({ text: '✅ Trade Completed!' })
-              ],
-              components: []
-            });
-          } catch (e) {
-            log('Failed to edit trade offer message: ' + e);
-          }
-
-          // Edit trade post/listing message in trade-posts channel
-          if (tradeListing) {
-            try {
-              const tradePostsChannel = await client.channels.fetch(TRADE_POSTS_CHANNEL_ID);
-              const tradePostMsg = await tradePostsChannel.messages.fetch(tradeListing.messageId);
-              await tradePostMsg.edit({
-                embeds: [
-                  EmbedBuilder.from(tradePostMsg.embeds[0])
-                    .setColor(0x00FF00)
-                    .setFooter({ text: '✅ Trade Completed!' })
-                ],
-                components: []
-              });
-            } catch (e) {
-              log('Failed to edit trade post message: ' + e);
-            }
-          }
-
-          // Announce in trade history channel
-          const fromUser = await client.users.fetch(updatedOffer.fromUserId);
-          const toUser = await client.users.fetch(updatedOffer.toUserId);
-          await logTradeHistory({
-            fromUser,
-            toUser,
-            offeredCar: updatedOffer.offeredCar,
-            requestedCar: updatedOffer.requestedCar,
-            status: 'completed'
-          });
 
           await interaction.update({ content: '✅ Trade completed successfully!', components: [] });
           return;
@@ -873,54 +797,6 @@ client.on('interactionCreate', async (interaction) => {
         // --- Decline handler ---
         if (action === 'declineOffer') {
           await TradeOffer.updateOne({ messageId: offerMsgId }, { status: 'declined' });
-
-          // Edit trade offer message in trade-offers channel
-          try {
-            const tradeOffersChannel = await client.channels.fetch(TRADEOFFERS_CHANNEL_ID);
-            const offerMsg = await tradeOffersChannel.messages.fetch(offerMsgId);
-            await offerMsg.edit({
-              embeds: [
-                EmbedBuilder.from(offerMsg.embeds[0])
-                  .setColor(0xFF0000)
-                  .setFooter({ text: '❌ Trade Declined' })
-              ],
-              components: []
-            });
-          } catch (e) {
-            log('Failed to edit trade offer message (decline): ' + e);
-          }
-
-          // Edit trade post/listing message in trade-posts channel
-          if (tradeListing) {
-            try {
-              const tradePostsChannel = await client.channels.fetch(TRADE_POSTS_CHANNEL_ID);
-              const tradePostMsg = await tradePostsChannel.messages.fetch(tradeListing.messageId);
-              await tradePostMsg.edit({
-                embeds: [
-                  EmbedBuilder.from(tradePostMsg.embeds[0])
-                    .setColor(0xFF0000)
-                    .setFooter({ text: '❌ Trade Declined' })
-                ],
-                components: []
-              });
-            } catch (e) {
-              log('Failed to edit trade post message (decline): ' + e);
-            }
-          }
-
-          // Announce in trade history channel
-          if (offer) {
-            const fromUser = await client.users.fetch(offer.fromUserId);
-            const toUser = await client.users.fetch(offer.toUserId);
-            await logTradeHistory({
-              fromUser,
-              toUser,
-              offeredCar: offer.offeredCar,
-              requestedCar: offer.requestedCar,
-              status: 'declined'
-            });
-          }
-
           await interaction.update({ content: '❌ Trade declined.', components: [] });
           return;
         }
