@@ -105,13 +105,10 @@ async function handleTradeNoteModal(interaction, TRADE_POSTS_CHANNEL_ID) {
   const note = interaction.fields.getTextInputValue('tradeNote') || '';
   const userId = interaction.user.id;
 
-  const activeListings = await TradeListing.countDocuments({ userId, active: true });
-  if (activeListings >= 5) return interaction.reply({ content: '⚠️ You already have 5 active listings.', flags: 64 });
-
   const tradeChannel = await interaction.client.channels.fetch(TRADE_POSTS_CHANNEL_ID);
   const embed = new EmbedBuilder()
     .setTitle(`👤 ${interaction.user.username} is offering:`)
-    .setDescription(`🚗 **${carName}** (#${serial})\n📝 ${note || 'No message'}\n⏳ Expires in 6 hours`)
+    .setDescription(`🚗 **${carName}** (#${serial})\n📝 ${note || 'No message'}\n⏳ Expires in 3 hours`)
     .setColor(0x00AAFF);
 
   const row = new ActionRowBuilder().addComponents(
@@ -138,7 +135,7 @@ async function handleTradeNoteModal(interaction, TRADE_POSTS_CHANNEL_ID) {
     } catch (err) {
       log(`Failed to update trade message (timeout): ${err}`);
     }
-  }, 6 * 60 * 60 * 1000);
+  }, 3 * 60 * 60 * 1000);
 
   await interaction.reply({ content: `✅ Trade listing posted to <#${TRADE_POSTS_CHANNEL_ID}>!`, flags: 64 });
 }
