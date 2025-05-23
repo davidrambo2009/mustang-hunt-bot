@@ -416,8 +416,10 @@ client.on('interactionCreate', async (interaction) => {
         await channel.send(`${user.username} claimed **${activeDrop.car.name}**! 🏁`);
         let garage = await Garage.findOne({ userId });
         if (!garage) garage = new Garage({ userId, cars: [] });
-        const carCount = garage.cars.filter(c => c.name === activeDrop.car.name).length;
-        garage.cars.push({ name: activeDrop.car.name, serial: carCount + 1 });
+        // Count all existing instances of this car across ALL garages
+const allGarages = await Garage.find();
+const globalCarCount = allGarages.reduce((sum, g) => sum + g.cars.filter(c => c.name === activeDrop.car.name).length, 0);
+garage.cars.push({ name: activeDrop.car.name, serial: globalCarCount + 1 });
 
         if (
           new Date() <= new Date('2025-05-31') &&
