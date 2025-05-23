@@ -132,7 +132,8 @@ const rarityColors = {
   Legendary: 0xFFA500,
   Mythic: 0xFF0000,
   'Ultra Mythic': 0x9900FF,
-  Godly: 0xFFD700
+  Godly: 0xFFD700,
+  'LIMITED EVENT': 0xD726FF
 };
 
 const cars = [
@@ -157,6 +158,7 @@ const cars = [
   { name: '2024 Mustang GT3', rarity: 'Legendary', rarityLevel: 5 },
   { name: '2024 Mustang GT4', rarity: 'Epic', rarityLevel: 4 },
   { name: '2025 Mustang GTD', rarity: 'Legendary', rarityLevel: 5 },
+  { name: '2022 Mustang NASCAR Cup Car', rarity: 'LIMITED EVENT', rarityLevel: 0 }, // rarityLevel: 0 means the car wont be dropped
   { name: '2000 SVT Cobra', rarity: 'Rare', rarityLevel: 5 },
   { name: '2004 SVT Cobra', rarity: 'Epic', rarityLevel: 7 },
   { name: '2000 SVT Cobra R', rarity: 'Ultra Mythic', rarityLevel: 11 },
