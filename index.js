@@ -95,6 +95,7 @@ const cars = [
   { name: '2024 Mustang GT3', rarity: 'Legendary', rarityLevel: 5 },
   { name: '2024 Mustang GT4', rarity: 'Epic', rarityLevel: 4 },
   { name: '2025 Mustang GTD', rarity: 'Legendary', rarityLevel: 5 },
+  // NASCAR Cup Car: This car is not included in drop pool (rarityLevel: 0)
   { name: '2022 Mustang NASCAR Cup Car', rarity: 'LIMITED EVENT', rarityLevel: 0 },
   { name: '2000 SVT Cobra', rarity: 'Rare', rarityLevel: 5 },
   { name: '2004 SVT Cobra', rarity: 'Epic', rarityLevel: 7 },
@@ -131,7 +132,10 @@ function getRarityTag(car) {
   return `[${car.rarity.toUpperCase()}]`;
 }
 function getRandomCar() {
-  const weighted = cars.map(car => ({ ...car, chance: getChanceFromRarity(car.rarityLevel) }));
+  // Exclude cars with rarityLevel 0 from random drops
+  const weighted = cars
+    .filter(car => car.rarityLevel > 0)
+    .map(car => ({ ...car, chance: getChanceFromRarity(car.rarityLevel) }));
   const total = weighted.reduce((acc, c) => acc + c.chance, 0);
   const roll = Math.random() * total;
   let sum = 0;
@@ -540,40 +544,40 @@ client.on('interactionCreate', async (interaction) => {
     return;
   }
   if (interaction.isButton() && interaction.customId.startsWith('garage:')) {
-  try {
-    const [, garageOwnerId, pageIndexStr] = interaction.customId.split(':');
-    const pageIndex = parseInt(pageIndexStr, 10);
+    try {
+      const [, garageOwnerId, pageIndexStr] = interaction.customId.split(':');
+      const pageIndex = parseInt(pageIndexStr, 10);
 
-    const garage = await Garage.findOne({ userId: garageOwnerId });
-    if (!garage || garage.cars.length === 0) {
-      return interaction.update({
-        embeds: [
-          new EmbedBuilder()
-            .setTitle('🚗 Garage is empty')
-            .setDescription('No cars found.')
-            .setColor(0x00BFFF)
-        ],
-        components: []
-      });
+      const garage = await Garage.findOne({ userId: garageOwnerId });
+      if (!garage || garage.cars.length === 0) {
+        return interaction.update({
+          embeds: [
+            new EmbedBuilder()
+              .setTitle('🚗 Garage is empty')
+              .setDescription('No cars found.')
+              .setColor(0x00BFFF)
+          ],
+          components: []
+        });
+      }
+
+      const all = await Garage.find();
+      const globalCount = calculateGlobalCounts(all);
+      const userObj = await client.users.fetch(garageOwnerId);
+      const { embed, components } = renderGaragePage(
+        interaction.user.id, garage, globalCount, pageIndex, userObj, garageOwnerId, cars
+      );
+
+      // IMPORTANT: Do NOT use flags here!
+      await interaction.update({ embeds: [embed], components });
+    } catch (error) {
+      log(`DB ERROR in garage pagination: ${error}`);
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({ content: '❌ An error occurred loading this page.', flags: 64 });
+      }
     }
-
-    const all = await Garage.find();
-    const globalCount = calculateGlobalCounts(all);
-    const userObj = await client.users.fetch(garageOwnerId);
-    const { embed, components } = renderGaragePage(
-      interaction.user.id, garage, globalCount, pageIndex, userObj, garageOwnerId, cars
-    );
-
-    // IMPORTANT: Do NOT use flags here!
-    await interaction.update({ embeds: [embed], components });
-  } catch (error) {
-    log(`DB ERROR in garage pagination: ${error}`);
-    if (!interaction.replied && !interaction.deferred) {
-      await interaction.reply({ content: '❌ An error occurred loading this page.', flags: 64 });
-    }
+    return;
   }
-  return;
-}
 });
 
 client.login(process.env.TOKEN);
