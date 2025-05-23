@@ -539,6 +539,41 @@ client.on('interactionCreate', async (interaction) => {
     await trade.handleOfferButton(interaction);
     return;
   }
+  if (interaction.isButton() && interaction.customId.startsWith('garage:')) {
+  try {
+    const [, garageOwnerId, pageIndexStr] = interaction.customId.split(':');
+    const pageIndex = parseInt(pageIndexStr, 10);
+
+    const garage = await Garage.findOne({ userId: garageOwnerId });
+    if (!garage || garage.cars.length === 0) {
+      return interaction.update({
+        embeds: [
+          new EmbedBuilder()
+            .setTitle('🚗 Garage is empty')
+            .setDescription('No cars found.')
+            .setColor(0x00BFFF)
+        ],
+        components: []
+      });
+    }
+
+    const all = await Garage.find();
+    const globalCount = calculateGlobalCounts(all);
+    const userObj = await client.users.fetch(garageOwnerId);
+    const { embed, components } = renderGaragePage(
+      interaction.user.id, garage, globalCount, pageIndex, userObj, garageOwnerId, cars
+    );
+
+    // IMPORTANT: Do NOT use flags here!
+    await interaction.update({ embeds: [embed], components });
+  } catch (error) {
+    log(`DB ERROR in garage pagination: ${error}`);
+    if (!interaction.replied && !interaction.deferred) {
+      await interaction.reply({ content: '❌ An error occurred loading this page.', flags: 64 });
+    }
+  }
+  return;
+}
 });
 
 client.login(process.env.TOKEN);
