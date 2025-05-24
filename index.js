@@ -56,7 +56,7 @@ const tradeOfferSchema = new mongoose.Schema({
   requestedCar: { name: String, serial: Number },
   message: String,
   timestamp: { type: Date, default: Date.now },
-  status: { type: String, enum: ['pending', 'accepted', 'declined'], default: 'pending' },
+  status: { type: String, enum: ['pending', 'accepted', 'declined', 'expired'], default: 'pending' },
   messageId: String
 });
 const TradeOffer = mongoose.model('TradeOffer', tradeOfferSchema);
@@ -95,7 +95,6 @@ const cars = [
   { name: '2024 Mustang GT3', rarity: 'Legendary', rarityLevel: 5 },
   { name: '2024 Mustang GT4', rarity: 'Epic', rarityLevel: 4 },
   { name: '2025 Mustang GTD', rarity: 'Legendary', rarityLevel: 5 },
-  // NASCAR Cup Car: This car is not included in drop pool (rarityLevel: 0)
   { name: '2022 Mustang NASCAR Cup Car', rarity: 'LIMITED EVENT', rarityLevel: 0 },
   { name: '2000 SVT Cobra', rarity: 'Rare', rarityLevel: 5 },
   { name: '2004 SVT Cobra', rarity: 'Epic', rarityLevel: 7 },
@@ -132,7 +131,6 @@ function getRarityTag(car) {
   return `[${car.rarity.toUpperCase()}]`;
 }
 function getRandomCar() {
-  // Exclude cars with rarityLevel 0 from random drops
   const weighted = cars
     .filter(car => car.rarityLevel > 0)
     .map(car => ({ ...car, chance: getChanceFromRarity(car.rarityLevel) }));
@@ -239,12 +237,8 @@ Use \`/claim\` in 1 minute!`)
   });
 }
 
-// ============================
-// SET TRADE DEPENDENCIES HERE!
-// ============================
 trade.setTradeDependencies({ Garage, TradeListing, TradeOffer, cars, log });
 
-// ---- CLEANUP EXPIRED TRADES ----
 async function cleanupExpiredTrades() {
   const now = Date.now();
   const threeHoursAgo = new Date(now - 3 * 60 * 60 * 1000);
@@ -254,8 +248,6 @@ async function cleanupExpiredTrades() {
     try {
       const channel = await client.channels.fetch(TRADE_POSTS_CHANNEL_ID);
       const msg = await channel.messages.fetch(listing.messageId);
-
-      // If the message is an embed, edit the embed to show expired notice:
       if (msg.embeds.length > 0) {
         const expiredEmbed = EmbedBuilder.from(msg.embeds[0])
           .setTitle('❌ Trade Listing Expired')
@@ -263,7 +255,6 @@ async function cleanupExpiredTrades() {
           .setDescription('This trade listing has expired and is no longer active.');
         await msg.edit({ embeds: [expiredEmbed], content: '' });
       } else {
-        // If it's just text or you want to override everything:
         await msg.edit({ content: '❌ Trade listing expired.', embeds: [] });
       }
     } catch (e) {
@@ -272,7 +263,30 @@ async function cleanupExpiredTrades() {
   }
 }
 
-// ---- BOT STARTUP ----
+async function cleanupExpiredTradeOffers() {
+  const now = Date.now();
+  const oneHourAgo = new Date(now - 1 * 60 * 60 * 1000);
+  const expiredOffers = await TradeOffer.find({ status: 'pending', timestamp: { $lt: oneHourAgo } });
+  for (const offer of expiredOffers) {
+    await TradeOffer.findByIdAndUpdate(offer._id, { status: 'expired' });
+    try {
+      const channel = await client.channels.fetch(TRADEOFFERS_CHANNEL_ID);
+      const msg = await channel.messages.fetch(offer.messageId);
+      if (msg.embeds.length > 0) {
+        const expiredEmbed = EmbedBuilder.from(msg.embeds[0])
+          .setTitle('❌ Trade Offer Expired')
+          .setColor(0xAAAAAA)
+          .setDescription('This trade offer has expired and is no longer active.');
+        await msg.edit({ embeds: [expiredEmbed], content: '' });
+      } else {
+        await msg.edit({ content: '❌ Trade offer expired.', embeds: [] });
+      }
+    } catch (e) {
+      log(`❌ Error editing expired trade offer message: ${e}`);
+    }
+  }
+}
+
 (async () => {
   try {
     await mongoose.connect(process.env.MONGO_URI, {
@@ -280,8 +294,6 @@ async function cleanupExpiredTrades() {
       useUnifiedTopology: true
     });
     log('✅ Connected to MongoDB');
-
-    // Migration block (runs only if RUN_MIGRATION is 'true')
     if (process.env.RUN_MIGRATION === 'true') {
       (async () => {
         try {
@@ -290,7 +302,6 @@ async function cleanupExpiredTrades() {
           for (const garage of allGarages) {
             let changed = false;
             let newCars = [];
-
             for (let i = 0; i < garage.cars.length; i++) {
               let car = garage.cars[i];
               if (typeof car === 'string') {
@@ -312,7 +323,6 @@ async function cleanupExpiredTrades() {
                 newCars.push(fixedCar);
               }
             }
-
             if (changed) {
               garage.cars = newCars;
               await garage.save();
@@ -327,10 +337,8 @@ async function cleanupExpiredTrades() {
           process.exit(1);
         }
       })();
-      return; // Important: stop further bot startup if migration runs
+      return;
     }
-
-    // ---- Start Discord bot after DB ready ----
     client.login(process.env.TOKEN);
   } catch (err) {
     log('❌ MongoDB connection error: ' + err);
@@ -345,29 +353,20 @@ client.once('ready', async () => {
   } catch (e) {
     log('❌ Error fetching drop channel: ' + e);
   }
-
-  // Cleanup expired trade listings on startup
   await cleanupExpiredTrades();
-
-  // Periodic cleanup every 10 minutes
+  await cleanupExpiredTradeOffers();
   setInterval(cleanupExpiredTrades, 10 * 60 * 1000);
+  setInterval(cleanupExpiredTradeOffers, 10 * 60 * 1000);
 
-  // ---- SLASH COMMANDS REGISTRATION ----
   const commands = [
     new SlashCommandBuilder().setName('claim').setDescription('Claim the currently dropped car'),
     new SlashCommandBuilder().setName('drop').setDescription('Force a drop').setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
     new SlashCommandBuilder().setName('garage').setDescription('View a garage').addUserOption(opt => opt.setName('user').setDescription('User to view')),
     new SlashCommandBuilder().setName('resetgarage').setDescription("Reset a user's garage").addUserOption(opt => opt.setName('user').setDescription('User').setRequired(true)).setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
     new SlashCommandBuilder().setName('stats').setDescription('View bot stats'),
-    new SlashCommandBuilder()
-      .setName('trade')
-      .setDescription('List a car for trade (select from menu, then add a note)'),
-    new SlashCommandBuilder()
-      .setName('canceltrade')
-      .setDescription('Cancel all your active trade listings'),
-    new SlashCommandBuilder()
-      .setName('help')
-      .setDescription('Show help information for all commands'),
+    new SlashCommandBuilder().setName('trade').setDescription('List a car for trade (select from menu, then add a note)'),
+    new SlashCommandBuilder().setName('canceltrade').setDescription('Cancel all your active trade listings'),
+    new SlashCommandBuilder().setName('help').setDescription('Show help information for all commands'),
   ].map(cmd => cmd.toJSON());
 
   try {
@@ -387,44 +386,19 @@ client.on('interactionCreate', async (interaction) => {
     const { commandName, user, channel, options, member } = interaction;
     const userId = user.id;
 
-    // ==== /help ====
     if (commandName === 'help') {
       const embed = new EmbedBuilder()
         .setTitle('🚦 Mustang Hunt Bot Help')
         .setDescription("Here's a list of all available commands and what they do:")
         .addFields(
-          {
-            name: '/claim',
-            value: 'Claim the currently dropped car. Only works when a drop is active. Cooldown applies.'
-          },
-          {
-            name: '/drop',
-            value: 'Force a car drop. **Administrator only.**'
-          },
-          {
-            name: '/garage [user]',
-            value: `View your garage or another user's garage. Only works in <#${GARAGE_CHANNEL_ID}>.`
-          },
-          {
-            name: '/resetgarage <user>',
-            value: 'Reset a user\'s garage. **Administrator only.**'
-          },
-          {
-            name: '/stats',
-            value: 'View bot statistics (users, cars, uptime).'
-          },
-          {
-            name: '/trade',
-            value: `List a car from your garage for trade. **Use this command in <#${TRADE_COMMAND_CHANNEL_ID}>.** You'll select the car and can add a note. The listing will appear in <#${TRADE_POSTS_CHANNEL_ID}>.`
-          },
-          {
-            name: '/canceltrade',
-            value: 'Cancel all your active trade listings.'
-          },
-          {
-            name: '/help',
-            value: 'Show this help message.'
-          }
+          { name: '/claim', value: 'Claim the currently dropped car. Only works when a drop is active. Cooldown applies.' },
+          { name: '/drop', value: 'Force a car drop. **Administrator only.**' },
+          { name: '/garage [user]', value: `View your garage or another user's garage. Only works in <#${GARAGE_CHANNEL_ID}>.` },
+          { name: '/resetgarage <user>', value: 'Reset a user\'s garage. **Administrator only.**' },
+          { name: '/stats', value: 'View bot statistics (users, cars, uptime).' },
+          { name: '/trade', value: `List a car from your garage for trade. **Use this command in <#${TRADE_COMMAND_CHANNEL_ID}>.** You'll select the car and can add a note. The listing will appear in <#${TRADE_POSTS_CHANNEL_ID}>.` },
+          { name: '/canceltrade', value: 'Cancel all your active trade listings.' },
+          { name: '/help', value: 'Show this help message.' }
         )
         .setFooter({ text: 'Tip: Use /trade only in the trade-commands channel; listings appear in #trade-posts.' })
         .setColor(0x00BFFF);
@@ -432,7 +406,6 @@ client.on('interactionCreate', async (interaction) => {
       return interaction.reply({ embeds: [embed], flags: 64 });
     }
 
-    // ==== /claim logic ====
     if (commandName === 'claim') {
       const now = Date.now();
       if (claimCooldowns.has(userId) && (now - claimCooldowns.get(userId)) < 10000) {
@@ -451,7 +424,6 @@ client.on('interactionCreate', async (interaction) => {
         await channel.send(`${user.username} claimed **${activeDrop.car.name}**! 🏁`);
         let garage = await Garage.findOne({ userId });
         if (!garage) garage = new Garage({ userId, cars: [] });
-        // Count all existing instances of this car across ALL garages
         const allGarages = await Garage.find();
         const globalCarCount = allGarages.reduce((sum, g) => sum + g.cars.filter(c => c.name === activeDrop.car.name).length, 0);
         garage.cars.push({ name: activeDrop.car.name, serial: globalCarCount + 1 });
@@ -478,7 +450,6 @@ client.on('interactionCreate', async (interaction) => {
       return;
     }
 
-    // ==== /drop logic ====
     if (commandName === 'drop') {
       if (!member.permissions.has(PermissionFlagsBits.Administrator)) return interaction.reply({ content: '❌ No permission.', flags: 64 });
       try {
@@ -490,11 +461,10 @@ client.on('interactionCreate', async (interaction) => {
       }
     }
 
-    // ==== /garage logic ====
     if (commandName === 'garage') {
       if (channel.id !== GARAGE_CHANNEL_ID) return interaction.reply({ content: '❌ Use /garage in the garage channel.', flags: 64 });
       try {
-        const target = options.getUser('user') || user; // garage owner
+        const target = options.getUser('user') || user;
         const garage = await Garage.findOne({ userId: target.id });
         if (!garage || garage.cars.length === 0) return interaction.reply({ content: '🚫 Garage is empty.', flags: 64 });
 
@@ -510,7 +480,6 @@ client.on('interactionCreate', async (interaction) => {
       return;
     }
 
-    // ==== /resetgarage logic ====
     if (commandName === 'resetgarage') {
       if (!member.permissions.has(PermissionFlagsBits.Administrator)) return interaction.reply({ content: '❌ No permission.', flags: 64 });
       try {
@@ -523,7 +492,6 @@ client.on('interactionCreate', async (interaction) => {
       }
     }
 
-    // ==== /stats logic ====
     if (commandName === 'stats') {
       try {
         const all = await Garage.find();
@@ -543,9 +511,6 @@ client.on('interactionCreate', async (interaction) => {
     }
   }
 
-  // =========================
-  // TRADE SYSTEM HANDLING
-  // =========================
   if (interaction.isChatInputCommand()) {
     if (interaction.commandName === 'trade') {
       await trade.handleTradeCommand(interaction, TRADE_COMMAND_CHANNEL_ID);
@@ -605,7 +570,6 @@ client.on('interactionCreate', async (interaction) => {
         interaction.user.id, garage, globalCount, pageIndex, userObj, garageOwnerId, cars
       );
 
-      // IMPORTANT: Do NOT use flags here!
       await interaction.update({ embeds: [embed], components });
     } catch (error) {
       log(`DB ERROR in garage pagination: ${error}`);
