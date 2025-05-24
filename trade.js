@@ -127,15 +127,18 @@ async function handleTradeNoteModal(interaction, TRADE_POSTS_CHANNEL_ID) {
     messageId: msg.id
   }).save();
 
-  setTimeout(async () => {
-    try {
-      await TradeListing.findOneAndUpdate({ messageId: msg.id }, { active: false });
-      const m = await tradeChannel.messages.fetch(msg.id);
-      await m.edit({ components: [] });
-    } catch (err) {
-      log(`Failed to update trade message (timeout): ${err}`);
-    }
-  }, 3 * 60 * 60 * 1000);
+ setTimeout(async () => {
+  // Mark trade as inactive in DB
+  await TradeListing.findByIdAndUpdate(listing._id, { active: false });
+  // Delete or edit the Discord message
+  try {
+    const channel = await client.channels.fetch(TRADE_POSTS_CHANNEL_ID);
+    const msg = await channel.messages.fetch(listing.messageId);
+    await msg.delete();
+  } catch (e) {
+    // message may already be deleted, ignore
+  }
+}, 3 * 60 * 60 * 1000);
 
   await interaction.reply({ content: `✅ Trade listing posted to <#${TRADE_POSTS_CHANNEL_ID}>!`, flags: 64 });
 }
