@@ -254,9 +254,20 @@ async function cleanupExpiredTrades() {
     try {
       const channel = await client.channels.fetch(TRADE_POSTS_CHANNEL_ID);
       const msg = await channel.messages.fetch(listing.messageId);
-      await msg.delete();
+
+      // If the message is an embed, edit the embed to show expired notice:
+      if (msg.embeds.length > 0) {
+        const expiredEmbed = EmbedBuilder.from(msg.embeds[0])
+          .setTitle('❌ Trade Listing Expired')
+          .setColor(0xAAAAAA)
+          .setDescription('This trade listing has expired and is no longer active.');
+        await msg.edit({ embeds: [expiredEmbed], content: '' });
+      } else {
+        // If it's just text or you want to override everything:
+        await msg.edit({ content: '❌ Trade listing expired.', embeds: [] });
+      }
     } catch (e) {
-      log(`❌ Error deleting expired trade message: ${e}`);
+      log(`❌ Error editing expired trade message: ${e}`);
     }
   }
 }
