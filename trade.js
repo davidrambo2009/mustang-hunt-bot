@@ -120,25 +120,22 @@ async function handleTradeNoteModal(interaction, TRADE_POSTS_CHANNEL_ID) {
 
   const msg = await tradeChannel.send({ embeds: [embed], components: [row] });
 
-  await new TradeListing({
+  // Save listing only ONCE
+  const newListing = await new TradeListing({
     userId,
     car: { name: carName, serial: parseInt(serial) },
     note,
     messageId: msg.id
   }).save();
 
- setTimeout(async () => {
-  // Mark trade as inactive in DB
-  await TradeListing.findByIdAndUpdate(listing._id, { active: false });
-  // Delete or edit the Discord message
-  try {
-    const channel = await client.channels.fetch(TRADE_POSTS_CHANNEL_ID);
-    const msg = await channel.messages.fetch(listing.messageId);
-    await msg.delete();
-  } catch (e) {
-    // message may already be deleted, ignore
-  }
-}, 3 * 60 * 60 * 1000);
+  setTimeout(async () => {
+    await TradeListing.findByIdAndUpdate(newListing._id, { active: false });
+    try {
+      const channel = await interaction.client.channels.fetch(TRADE_POSTS_CHANNEL_ID);
+      const msgToEdit = await channel.messages.fetch(newListing.messageId);
+      await msgToEdit.edit({ content: '❌ Trade listing expired.', embeds: [] });
+    } catch (e) {}
+  }, 3 * 60 * 60 * 1000);
 
   await interaction.reply({ content: `✅ Trade listing posted to <#${TRADE_POSTS_CHANNEL_ID}>!`, flags: 64 });
 }
@@ -243,13 +240,12 @@ async function handleOfferButton(interaction) {
   // --- Always fetch the offer from DB to get the correct toUserId (listing owner) ---
   const offer = await TradeOffer.findOne({ messageId: offerMsgId });
   if (!offer) {
-    return interaction.reply({ content: '❌ Offer not found or already handled.', flags: 64, ephemeral: true });
+    return interaction.reply({ content: '❌ Offer not found or already handled.', flags: 64 });
   }
   if (interaction.user.id !== offer.toUserId) {
     return interaction.reply({
       content: "❌ Only the listing owner can accept or decline this trade.",
-      flags: 64,
-      ephemeral: true
+      flags: 64
     });
   }
 
@@ -269,37 +265,37 @@ async function handleOfferButton(interaction) {
       await interaction.reply({
         content: 'Are you sure you want to accept this trade?\nThis action is **final** and will swap the cars between users.',
         components: [row],
-        ephemeral: true
+        flags: 64
       });
       return;
     }
-
-    // --- Actual trade logic, only runs on confirm! ---
-    const offerUpdate = await TradeOffer.findOneAndUpdate(
-      { messageId: offerMsgId, status: 'pending' },
-      { status: 'accepted' }
-    );
-    if (!offerUpdate) {
-      return interaction.reply({ content: '❌ Offer no longer valid.', flags: 64 });
-    }
-
-    const fromGarage = await Garage.findOne({ userId: offer.fromUserId });
-    const toGarage = await Garage.findOne({ userId: offer.toUserId });
-
-    fromGarage.cars = fromGarage.cars.filter(
-      c => !(c.name === offer.offeredCar.name && c.serial === offer.offeredCar.serial)
-    );
-    toGarage.cars = toGarage.cars.filter(
-      c => !(c.name === offer.requestedCar.name && c.serial === offer.requestedCar.serial)
-    );
-    fromGarage.cars.push(offer.requestedCar);
-    toGarage.cars.push(offer.offeredCar);
-    await fromGarage.save();
-    await toGarage.save();
-
-    await interaction.update({ content: '✅ Trade completed successfully!', components: [] });
-    return;
   }
+
+  // --- Actual trade logic, only runs on confirm! ---
+  const offerUpdate = await TradeOffer.findOneAndUpdate(
+    { messageId: offerMsgId, status: 'pending' },
+    { status: 'accepted' }
+  );
+  if (!offerUpdate) {
+    return interaction.reply({ content: '❌ Offer no longer valid.', flags: 64 });
+  }
+
+  const fromGarage = await Garage.findOne({ userId: offer.fromUserId });
+  const toGarage = await Garage.findOne({ userId: offer.toUserId });
+
+  fromGarage.cars = fromGarage.cars.filter(
+    c => !(c.name === offer.offeredCar.name && c.serial === offer.offeredCar.serial)
+  );
+  toGarage.cars = toGarage.cars.filter(
+    c => !(c.name === offer.requestedCar.name && c.serial === offer.requestedCar.serial)
+  );
+  fromGarage.cars.push(offer.requestedCar);
+  toGarage.cars.push(offer.offeredCar);
+  await fromGarage.save();
+  await toGarage.save();
+
+  await interaction.update({ content: '✅ Trade completed successfully!', components: [] });
+  return;
 
   // --- Cancel confirmation handler ---
   if (action === 'cancelTradeConfirm') {
