@@ -244,6 +244,24 @@ Use \`/claim\` in 1 minute!`)
 // ============================
 trade.setTradeDependencies({ Garage, TradeListing, TradeOffer, cars, log });
 
+// ---- CLEANUP EXPIRED TRADES ----
+async function cleanupExpiredTrades() {
+  const now = Date.now();
+  const threeHoursAgo = new Date(now - 3 * 60 * 60 * 1000);
+  const expiredListings = await TradeListing.find({ active: true, timestamp: { $lt: threeHoursAgo } });
+  for (const listing of expiredListings) {
+    await TradeListing.findByIdAndUpdate(listing._id, { active: false });
+    try {
+      const channel = await client.channels.fetch(TRADE_POSTS_CHANNEL_ID);
+      const msg = await channel.messages.fetch(listing.messageId);
+      await msg.delete();
+    } catch (e) {
+      log(`❌ Error deleting expired trade message: ${e}`);
+    }
+  }
+}
+
+// ---- BOT STARTUP ----
 (async () => {
   try {
     await mongoose.connect(process.env.MONGO_URI, {
@@ -316,6 +334,12 @@ client.once('ready', async () => {
   } catch (e) {
     log('❌ Error fetching drop channel: ' + e);
   }
+
+  // Cleanup expired trade listings on startup
+  await cleanupExpiredTrades();
+
+  // Periodic cleanup every 10 minutes
+  setInterval(cleanupExpiredTrades, 10 * 60 * 1000);
 
   // ---- SLASH COMMANDS REGISTRATION ----
   const commands = [
@@ -417,9 +441,9 @@ client.on('interactionCreate', async (interaction) => {
         let garage = await Garage.findOne({ userId });
         if (!garage) garage = new Garage({ userId, cars: [] });
         // Count all existing instances of this car across ALL garages
-const allGarages = await Garage.find();
-const globalCarCount = allGarages.reduce((sum, g) => sum + g.cars.filter(c => c.name === activeDrop.car.name).length, 0);
-garage.cars.push({ name: activeDrop.car.name, serial: globalCarCount + 1 });
+        const allGarages = await Garage.find();
+        const globalCarCount = allGarages.reduce((sum, g) => sum + g.cars.filter(c => c.name === activeDrop.car.name).length, 0);
+        garage.cars.push({ name: activeDrop.car.name, serial: globalCarCount + 1 });
 
         if (
           new Date() <= new Date('2025-05-31') &&
@@ -581,5 +605,3 @@ garage.cars.push({ name: activeDrop.car.name, serial: globalCarCount + 1 });
     return;
   }
 });
-
-client.login(process.env.TOKEN);
