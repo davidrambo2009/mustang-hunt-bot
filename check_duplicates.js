@@ -32,9 +32,13 @@ async function checkDuplicateUserIds(collection) {
 }
 
 // Finds and removes duplicates based on the 'serial' field (keeps one, deletes others)
+// Skips documents where serial is null or missing
 async function removeDuplicateSerials(collection) {
-  // Aggregation pipeline to find serials that appear more than once
+  // Only group by non-null serials
   const duplicates = await collection.aggregate([
+    {
+      $match: { serial: { $ne: null } } // Skip documents where serial is null
+    },
     {
       $group: {
         _id: "$serial",
@@ -68,7 +72,7 @@ async function main() {
     // Check for duplicate userIds (does not delete)
     await checkDuplicateUserIds(collection);
 
-    // Remove duplicate serials (keeps one, deletes others)
+    // Remove duplicate serials (keeps one, deletes others, skips null serials)
     await removeDuplicateSerials(collection);
 
   } catch (err) {
