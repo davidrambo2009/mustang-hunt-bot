@@ -1,49 +1,35 @@
-require('dotenv').config();
-const mongoose = require('mongoose');
+const { MongoClient } = require('mongodb');
 
-// Define the Garage schema (should match your index.js)
-const garageSchema = new mongoose.Schema({
-  userId: String,
-  cars: [{ name: String, serial: Number }]
-});
-const Garage = mongoose.model('Garage', garageSchema);
+const uri = "mongodb+srv://davidrambo2009:zZntRaFH96dtv-Z@cluster0.c4cbv7r.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0";
+const client = new MongoClient(uri);
 
-async function findDuplicateSerials() {
-  await mongoose.connect(process.env.MONGO_URI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true
-  });
+async function removeDuplicates() {
+  try {
+    await client.connect();
+    const db = client.db('test'); // Change 'test' if your DB name is different
+    const collection = db.collection('garages');
 
-  const garages = await Garage.find();
-  const serialMap = new Map();
+    // Find duplicate serials
+    const duplicates = await collection.aggregate([
+      { $group: {
+        _id: "$serial", // or use your unique field
+        ids: { $addToSet: "$_id" },
+        count: { $sum: 1 }
+      }},
+      { $match: { count: { $gt: 1 } } }
+    ]).toArray();
 
-  for (const garage of garages) {
-    for (const car of garage.cars) {
-      if (!car.name || typeof car.serial !== "number") continue;
-      const key = `${car.name}::${car.serial}`;
-      if (!serialMap.has(key)) {
-        serialMap.set(key, []);
+    for (const doc of duplicates) {
+      const [keep, ...remove] = doc.ids;
+      if (remove.length > 0) {
+        await collection.deleteMany({ _id: { $in: remove } });
+        console.log(`Removed ${remove.length} duplicates for serial: ${doc._id}`);
       }
-      serialMap.get(key).push(garage.userId);
     }
+    console.log("Duplicate cleanup complete.");
+  } finally {
+    await client.close();
   }
-
-  let found = false;
-  for (const [key, userIds] of serialMap.entries()) {
-    if (userIds.length > 1) {
-      found = true;
-      const [name, serial] = key.split("::");
-      console.log(`Duplicate found for ${name} serial #${serial}: Users: ${userIds.join(', ')}`);
-    }
-  }
-
-  if (!found) {
-    console.log('No duplicates found.');
-  }
-  await mongoose.disconnect();
 }
 
-findDuplicateSerials().catch(err => {
-  console.error('Error running duplicate checker:', err);
-  process.exit(1);
-});
+removeDuplicates().catch(console.error);
