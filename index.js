@@ -32,6 +32,7 @@ const GARAGE_CHANNEL_ID = '1372749137413668884';
 const TRADE_POSTS_CHANNEL_ID = '1374486602012692581';
 const TRADEOFFERS_CHANNEL_ID = '1374486704387264512';
 const TRADE_COMMAND_CHANNEL_ID = '1374623379406979134';
+const TRADE_HISTORY_CHANNEL_ID = '1381780373192573019';
 const GUILD_ID = '1370450475400302686';
 
 const garageSchema = new mongoose.Schema({
@@ -117,7 +118,6 @@ const cars = [
 const nascarUnlockCar = '2022 Mustang NASCAR Cup Car';
 const requiredForNascar = ['2024 Mustang GT3', '2024 Mustang GT4', '2025 Mustang GTD'];
 
-// Drop state object for tracking active drop and timeout
 let dropState = { activeDrop: null, dropTimeout: null };
 const claimingUsers = new Set();
 const claimCooldowns = new Map();
@@ -362,209 +362,239 @@ client.once('ready', async () => {
 });
 
 client.on('interactionCreate', async (interaction) => {
-  if (interaction.isChatInputCommand()) {
-    const { commandName, user, channel, options, member } = interaction;
-    const userId = user.id;
+  try {
+    if (interaction.isChatInputCommand()) {
+      const { commandName, user, channel, options, member } = interaction;
+      const userId = user.id;
 
-    if (commandName === 'help') {
-      const embed = new EmbedBuilder()
-        .setTitle('🚦 Mustang Hunt Bot Help')
-        .setDescription("Here's a list of all available commands and what they do:")
-        .addFields(
-          { name: '/claim', value: 'Claim the currently dropped car. Only works when a drop is active. Cooldown applies.' },
-          { name: '/drop', value: 'Force a car drop. **Administrator only.**' },
-          { name: '/garage [user]', value: `View your garage or another user's garage. Only works in <#${GARAGE_CHANNEL_ID}>.` },
-          { name: '/resetgarage <user>', value: 'Reset a user\'s garage. **Administrator only.**' },
-          { name: '/stats', value: 'View bot statistics (users, cars, uptime).' },
-          { name: '/trade', value: `List a car from your garage for trade. **Use this command in <#${TRADE_COMMAND_CHANNEL_ID}>.** You'll select the car and can add a note. The listing will appear in <#${TRADE_POSTS_CHANNEL_ID}>.` },
-          { name: '/canceltrade', value: 'Cancel all your active trade listings.' },
-          { name: '/help', value: 'Show this help message.' }
-        )
-        .setFooter({ text: 'Tip: Use /trade only in the trade-commands channel; listings appear in #trade-posts.' })
-        .setColor(0x00BFFF);
-
-      return interaction.reply({ embeds: [embed], flags: 64 });
-    }
-
-    if (commandName === 'claim') {
-      const now = Date.now();
-      if (claimCooldowns.has(userId) && (now - claimCooldowns.get(userId)) < 10000) {
-        return interaction.reply({ content: '⏳ You must wait 10 seconds between claims.', flags: 64 });
-      }
-      claimCooldowns.set(userId, now);
-
-      if (!dropState.activeDrop) return interaction.reply({ content: '❌ No car to claim.', flags: 64 });
-      if (dropState.activeDrop.claimed) return interaction.reply({ content: '⚠️ Already claimed.', flags: 64 });
-      if (claimingUsers.has(userId)) return;
-      claimingUsers.add(userId);
-      try {
-        dropState.activeDrop.claimed = true;
-        clearTimeout(dropState.dropTimeout);
-        await dropState.activeDrop.message.delete().catch(() => {});
-        const claimEmbed = new EmbedBuilder()
-          .setTitle('🏆 Mustang Claimed!')
-          .setDescription(
-            `**${user.username}** claimed\n` +
-            `> 🚗 **${dropState.activeDrop.car.name}** ${getRarityEmoji(dropState.activeDrop.car.rarity)}`
+      if (commandName === 'help') {
+        const embed = new EmbedBuilder()
+          .setTitle('🚦 Mustang Hunt Bot Help')
+          .setDescription("Here's a list of all available commands and what they do:")
+          .addFields(
+            { name: '/claim', value: 'Claim the currently dropped car. Only works when a drop is active. Cooldown applies.' },
+            { name: '/drop', value: 'Force a car drop. **Administrator only.**' },
+            { name: '/garage [user]', value: `View your garage or another user's garage. Only works in <#${GARAGE_CHANNEL_ID}>.` },
+            { name: '/resetgarage <user>', value: 'Reset a user\'s garage. **Administrator only.**' },
+            { name: '/stats', value: 'View bot statistics (users, cars, uptime).' },
+            { name: '/trade', value: `List a car from your garage for trade. **Use this command in <#${TRADE_COMMAND_CHANNEL_ID}>.** You'll select the car and can add a note. The listing will appear in <#${TRADE_POSTS_CHANNEL_ID}>.` },
+            { name: '/canceltrade', value: 'Cancel all your active trade listings.' },
+            { name: '/help', value: 'Show this help message.' }
           )
-          .setColor(rarityColors[dropState.activeDrop.car.rarity] || 0x00BFFF)
-          .setFooter({ text: 'Congratulations on your new ride!' });
-        await channel.send({ embeds: [claimEmbed] });
-        let garage = await Garage.findOne({ userId });
-        if (!garage) garage = new Garage({ userId, cars: [] });
-        const allGarages = await Garage.find();
-        const globalCarCount = allGarages.reduce((sum, g) => sum + g.cars.filter(c => c.name === dropState.activeDrop.car.name).length, 0);
-        garage.cars.push({ name: dropState.activeDrop.car.name, serial: globalCarCount + 1 });
+          .setFooter({ text: 'Tip: Use /trade only in the trade-commands channel; listings appear in #trade-posts.' })
+          .setColor(0x00BFFF);
 
-        if (
-          new Date() <= new Date('2025-05-31') &&
-          requiredForNascar.every(req => garage.cars.some(c => c.name === req)) &&
-          !garage.cars.some(c => c.name === nascarUnlockCar)
-        ) {
-          garage.cars.push({ name: nascarUnlockCar, serial: 1 });
-          await channel.send(`🎉 ${user.username} unlocked **${nascarUnlockCar}**!`);
+        return interaction.reply({ embeds: [embed], flags: 64 });
+      }
+
+      if (commandName === 'claim') {
+        const now = Date.now();
+        if (claimCooldowns.has(userId) && (now - claimCooldowns.get(userId)) < 10000) {
+          return interaction.reply({ content: '⏳ You must wait 10 seconds between claims.', flags: 64 });
         }
+        claimCooldowns.set(userId, now);
 
-        await garage.save();
-        dropState.activeDrop = null;
-        scheduleNextDrop(channel);
-        await interaction.reply({ content: '✅ You claimed the car!', flags: 64 });
-      } catch (error) {
-        log(`DB ERROR in /claim: ${error}`);
-        await interaction.reply({ content: '❌ An error occurred. Please try again later.', flags: 64 });
-      } finally {
-        claimingUsers.delete(userId);
+        if (!dropState.activeDrop) return interaction.reply({ content: '❌ No car to claim.', flags: 64 });
+        if (dropState.activeDrop.claimed) return interaction.reply({ content: '⚠️ Already claimed.', flags: 64 });
+        if (claimingUsers.has(userId)) return;
+        claimingUsers.add(userId);
+        try {
+          dropState.activeDrop.claimed = true;
+          clearTimeout(dropState.dropTimeout);
+          await dropState.activeDrop.message.delete().catch(() => {});
+          const claimEmbed = new EmbedBuilder()
+            .setTitle('🏆 Mustang Claimed!')
+            .setDescription(
+              `**${user.username}** claimed\n` +
+              `> 🚗 **${dropState.activeDrop.car.name}** ${getRarityEmoji(dropState.activeDrop.car.rarity)}`
+            )
+            .setColor(rarityColors[dropState.activeDrop.car.rarity] || 0x00BFFF)
+            .setFooter({ text: 'Congratulations on your new ride!' });
+          await channel.send({ embeds: [claimEmbed] });
+          let garage = await Garage.findOne({ userId });
+          if (!garage) garage = new Garage({ userId, cars: [] });
+          const allGarages = await Garage.find();
+          const globalCarCount = allGarages.reduce((sum, g) => sum + g.cars.filter(c => c.name === dropState.activeDrop.car.name).length, 0);
+          garage.cars.push({ name: dropState.activeDrop.car.name, serial: globalCarCount + 1 });
+
+          if (
+            new Date() <= new Date('2025-05-31') &&
+            requiredForNascar.every(req => garage.cars.some(c => c.name === req)) &&
+            !garage.cars.some(c => c.name === nascarUnlockCar)
+          ) {
+            garage.cars.push({ name: nascarUnlockCar, serial: 1 });
+            await channel.send(`🎉 ${user.username} unlocked **${nascarUnlockCar}**!`);
+          }
+
+          await garage.save();
+          dropState.activeDrop = null;
+          scheduleNextDrop(channel);
+          await interaction.reply({ content: '✅ You claimed the car!', flags: 64 });
+        } catch (error) {
+          log(`DB ERROR in /claim: ${error}`);
+          await interaction.reply({ content: '❌ An error occurred. Please try again later.', flags: 64 });
+        } finally {
+          claimingUsers.delete(userId);
+        }
+        return;
       }
-      return;
-    }
 
-    if (commandName === 'drop') {
-      if (!member.permissions.has(PermissionFlagsBits.Administrator)) return interaction.reply({ content: '❌ No permission.', flags: 64 });
-      try {
-        dropCar(channel, getRandomCar, scheduleNextDrop, dropState);
-        return interaction.reply({ content: '🚗 Car dropped.', flags: 64 });
-      } catch (error) {
-        log(`ERROR in /drop: ${error}`);
-        return interaction.reply({ content: '❌ An error occurred dropping the car.', flags: 64 });
+      if (commandName === 'drop') {
+        if (!member.permissions.has(PermissionFlagsBits.Administrator)) return interaction.reply({ content: '❌ No permission.', flags: 64 });
+        try {
+          dropCar(channel, getRandomCar, scheduleNextDrop, dropState);
+          return interaction.reply({ content: '🚗 Car dropped.', flags: 64 });
+        } catch (error) {
+          log(`ERROR in /drop: ${error}`);
+          return interaction.reply({ content: '❌ An error occurred dropping the car.', flags: 64 });
+        }
       }
-    }
 
-    if (commandName === 'garage') {
-      if (channel.id !== GARAGE_CHANNEL_ID) return interaction.reply({ content: '❌ Use /garage in the garage channel.', flags: 64 });
-      try {
-        const target = options.getUser('user') || user;
-        const garage = await Garage.findOne({ userId: target.id });
-        if (!garage || garage.cars.length === 0) return interaction.reply({ content: '🚫 Garage is empty.', flags: 64 });
+      if (commandName === 'garage') {
+        if (channel.id !== GARAGE_CHANNEL_ID) return interaction.reply({ content: '❌ Use /garage in the garage channel.', flags: 64 });
+        try {
+          const target = options.getUser('user') || user;
+          const garage = await Garage.findOne({ userId: target.id });
+          if (!garage || garage.cars.length === 0) return interaction.reply({ content: '🚫 Garage is empty.', flags: 64 });
 
-        const all = await Garage.find();
-        const globalCount = calculateGlobalCounts(all);
-        const { embed, components } = renderGaragePage(user.id, garage, globalCount, 0, target, target.id, cars);
+          const all = await Garage.find();
+          const globalCount = calculateGlobalCounts(all);
+          const { embed, components } = renderGaragePage(user.id, garage, globalCount, 0, target, target.id, cars);
 
-        await interaction.reply({ embeds: [embed], components, flags: 64 });
-      } catch (error) {
-        log(`DB ERROR in /garage: ${error}`);
-        await interaction.reply({ content: '❌ An error occurred. Please try again later.', flags: 64 });
+          await interaction.reply({ embeds: [embed], components, flags: 64 });
+        } catch (error) {
+          log(`DB ERROR in /garage: ${error}`);
+          await interaction.reply({ content: '❌ An error occurred. Please try again later.', flags: 64 });
+        }
+        return;
       }
-      return;
-    }
 
-    if (commandName === 'resetgarage') {
-      if (!member.permissions.has(PermissionFlagsBits.Administrator)) return interaction.reply({ content: '❌ No permission.', flags: 64 });
-      try {
-        const target = options.getUser('user');
-        await Garage.findOneAndUpdate({ userId: target.id }, { cars: [] }, { upsert: true });
-        return interaction.reply({ content: `♻️ Reset ${target.username}'s garage.`, flags: 64 });
-      } catch (error) {
-        log(`DB ERROR in /resetgarage: ${error}`);
-        return interaction.reply({ content: '❌ An error occurred. Please try again later.', flags: 64 });
+      if (commandName === 'resetgarage') {
+        if (!member.permissions.has(PermissionFlagsBits.Administrator)) return interaction.reply({ content: '❌ No permission.', flags: 64 });
+        try {
+          const target = options.getUser('user');
+          await Garage.findOneAndUpdate({ userId: target.id }, { cars: [] }, { upsert: true });
+          return interaction.reply({ content: `♻️ Reset ${target.username}'s garage.`, flags: 64 });
+        } catch (error) {
+          log(`DB ERROR in /resetgarage: ${error}`);
+          return interaction.reply({ content: '❌ An error occurred. Please try again later.', flags: 64 });
+        }
       }
-    }
 
-    if (commandName === 'stats') {
-      try {
-        const all = await Garage.find();
-        const users = all.length;
-        const carsTotal = all.reduce((s, g) => s + g.cars.length, 0);
-        const up = process.uptime();
-        const h = Math.floor(up / 3600), m = Math.floor((up % 3600) / 60), s = Math.floor(up % 60);
-        await interaction.reply({ content: `📊 **Bot Stats**
+      if (commandName === 'stats') {
+        try {
+          const all = await Garage.find();
+          const users = all.length;
+          const carsTotal = all.reduce((s, g) => s + g.cars.length, 0);
+          const up = process.uptime();
+          const h = Math.floor(up / 3600), m = Math.floor((up % 3600) / 60), s = Math.floor(up % 60);
+          await interaction.reply({ content: `📊 **Bot Stats**
 • 👥 Users: **${users}**
 • 🚗 Total Cars: **${carsTotal}**
 • ⏱️ Uptime: **${h}h ${m}m ${s}s**`, flags: 64 });
+        } catch (error) {
+          log(`DB ERROR in /stats: ${error}`);
+          await interaction.reply({ content: '❌ An error occurred. Please try again later.', flags: 64 });
+        }
+        return;
+      }
+    }
+
+    if (interaction.isChatInputCommand()) {
+      if (interaction.commandName === 'trade') {
+        await trade.handleTradeCommand(interaction, TRADE_COMMAND_CHANNEL_ID);
+        return;
+      }
+      if (interaction.commandName === 'canceltrade') {
+        await trade.handleCancelTradeCommand(interaction, TRADE_POSTS_CHANNEL_ID);
+        return;
+      }
+    }
+    if (interaction.isStringSelectMenu() && interaction.customId.startsWith("tradeSelect:")) {
+      await trade.handleTradeSelectMenu(interaction);
+      return;
+    }
+    if (interaction.type === InteractionType.ModalSubmit && interaction.customId.startsWith('tradeNoteModal:')) {
+      await trade.handleTradeNoteModal(interaction, TRADE_POSTS_CHANNEL_ID);
+      return;
+    }
+    if (interaction.isButton() && interaction.customId.startsWith('sendOffer:')) {
+      await trade.handleSendOfferButton(interaction);
+      return;
+    }
+    if (interaction.isStringSelectMenu() && interaction.customId.startsWith("chooseOffer:")) {
+      await trade.handleChooseOfferMenu(interaction, TRADEOFFERS_CHANNEL_ID);
+      return;
+    }
+    // --- Trade history logging after offer actions ---
+    if (interaction.isButton() && (
+      interaction.customId.startsWith('acceptOffer:') ||
+      interaction.customId.startsWith('declineOffer:') ||
+      interaction.customId.startsWith('cancelTradeConfirm:')
+    )) {
+      await trade.handleOfferButton(interaction);
+      // --- Trade history logging ---
+      const [action, senderId, receiverId, offerMsgId] = interaction.customId.split(':');
+      const offer = await TradeOffer.findOne({ messageId: offerMsgId });
+      if (offer && offer.status !== 'pending') {
+        const listingUser = await client.users.fetch(offer.toUserId);
+        const offerUser = await client.users.fetch(offer.fromUserId);
+        let logAction = '';
+        if (offer.status === 'accepted') logAction = 'accepted';
+        else if (offer.status === 'declined') logAction = 'declined';
+        else if (offer.status === 'expired') logAction = 'expired';
+        else if (action === 'cancelTradeConfirm') logAction = 'cancelled';
+        if (logAction) {
+          await trade.logTradeHistory({
+            client,
+            TRADE_HISTORY_CHANNEL_ID,
+            action: logAction,
+            offer,
+            listingUser,
+            offerUser,
+          });
+        }
+      }
+      return;
+    }
+    if (interaction.isButton() && interaction.customId.startsWith('garage:')) {
+      try {
+        const [, garageOwnerId, pageIndexStr] = interaction.customId.split(':');
+        const pageIndex = parseInt(pageIndexStr, 10);
+
+        const garage = await Garage.findOne({ userId: garageOwnerId });
+        if (!garage || garage.cars.length === 0) {
+          return interaction.update({
+            embeds: [
+              new EmbedBuilder()
+                .setTitle('🚗 Garage is empty')
+                .setDescription('No cars found.')
+                .setColor(0x00BFFF)
+            ],
+            components: []
+          });
+        }
+
+        const all = await Garage.find();
+        const globalCount = calculateGlobalCounts(all);
+        const userObj = await client.users.fetch(garageOwnerId);
+        const { embed, components } = renderGaragePage(
+          interaction.user.id, garage, globalCount, pageIndex, userObj, garageOwnerId, cars
+        );
+
+        await interaction.update({ embeds: [embed], components });
       } catch (error) {
-        log(`DB ERROR in /stats: ${error}`);
-        await interaction.reply({ content: '❌ An error occurred. Please try again later.', flags: 64 });
+        log(`DB ERROR in garage pagination: ${error}`);
+        if (!interaction.replied && !interaction.deferred) {
+          await interaction.reply({ content: '❌ An error occurred loading this page.', flags: 64 });
+        }
       }
       return;
     }
-  }
-
-  if (interaction.isChatInputCommand()) {
-    if (interaction.commandName === 'trade') {
-      await trade.handleTradeCommand(interaction, TRADE_COMMAND_CHANNEL_ID);
-      return;
+  } catch (error) {
+    log(`Interaction error: ${error}`);
+    if (!interaction.replied && !interaction.deferred) {
+      await interaction.reply({ content: '❌ An error occurred.', flags: 64 });
     }
-    if (interaction.commandName === 'canceltrade') {
-      await trade.handleCancelTradeCommand(interaction, TRADE_POSTS_CHANNEL_ID);
-      return;
-    }
-  }
-  if (interaction.isStringSelectMenu() && interaction.customId.startsWith("tradeSelect:")) {
-    await trade.handleTradeSelectMenu(interaction);
-    return;
-  }
-  if (interaction.type === InteractionType.ModalSubmit && interaction.customId.startsWith('tradeNoteModal:')) {
-    await trade.handleTradeNoteModal(interaction, TRADE_POSTS_CHANNEL_ID);
-    return;
-  }
-  if (interaction.isButton() && interaction.customId.startsWith('sendOffer:')) {
-    await trade.handleSendOfferButton(interaction);
-    return;
-  }
-  if (interaction.isStringSelectMenu() && interaction.customId.startsWith("chooseOffer:")) {
-    await trade.handleChooseOfferMenu(interaction, TRADEOFFERS_CHANNEL_ID);
-    return;
-  }
-  if (interaction.isButton() && (
-    interaction.customId.startsWith('acceptOffer:') ||
-    interaction.customId.startsWith('declineOffer:') ||
-    interaction.customId.startsWith('cancelTradeConfirm:')
-  )) {
-    await trade.handleOfferButton(interaction);
-    return;
-  }
-  if (interaction.isButton() && interaction.customId.startsWith('garage:')) {
-    try {
-      const [, garageOwnerId, pageIndexStr] = interaction.customId.split(':');
-      const pageIndex = parseInt(pageIndexStr, 10);
-
-      const garage = await Garage.findOne({ userId: garageOwnerId });
-      if (!garage || garage.cars.length === 0) {
-        return interaction.update({
-          embeds: [
-            new EmbedBuilder()
-              .setTitle('🚗 Garage is empty')
-              .setDescription('No cars found.')
-              .setColor(0x00BFFF)
-          ],
-          components: []
-        });
-      }
-
-      const all = await Garage.find();
-      const globalCount = calculateGlobalCounts(all);
-      const userObj = await client.users.fetch(garageOwnerId);
-      const { embed, components } = renderGaragePage(
-        interaction.user.id, garage, globalCount, pageIndex, userObj, garageOwnerId, cars
-      );
-
-      await interaction.update({ embeds: [embed], components });
-    } catch (error) {
-      log(`DB ERROR in garage pagination: ${error}`);
-      if (!interaction.replied && !interaction.deferred) {
-        await interaction.reply({ content: '❌ An error occurred loading this page.', flags: 64 });
-      }
-    }
-    return;
   }
 });
