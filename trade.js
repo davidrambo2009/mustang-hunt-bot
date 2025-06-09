@@ -20,6 +20,53 @@ function setTradeDependencies(deps) {
   log = deps.log;
 }
 
+// Utility: get car emoji and rarity for trade history
+function getCarRarityInfo(carName) {
+  const carMeta = cars.find(c => c.name === carName);
+  // You can customize emoji per rarity here
+  const rarityEmojiMap = {
+    'Common': '⚪', 'Uncommon': '🟢', 'Rare': '🔵',
+    'Epic': '🟣', 'Legendary': '🟠', 'Mythic': '🔴',
+    'Ultra Mythic': '🟪', 'Godly': '🟡', 'LIMITED EVENT': '✨'
+  };
+  if (!carMeta) return { emoji: '', rarity: 'Unknown' };
+  return {
+    emoji: rarityEmojiMap[carMeta.rarity] || '',
+    rarity: carMeta.rarity || 'Unknown'
+  };
+}
+
+// --- Trade History Logger (for trade-history channel) ---
+async function logTradeHistory({
+  client,
+  TRADE_HISTORY_CHANNEL_ID,
+  action, // 'accepted', 'declined', 'cancelled', 'expired'
+  offer,
+  listingUser,
+  offerUser
+}) {
+  const { emoji: reqEmoji, rarity: reqRarity } = getCarRarityInfo(offer.requestedCar.name);
+  const { emoji: offEmoji, rarity: offRarity } = getCarRarityInfo(offer.offeredCar.name);
+
+  let result;
+  if (action === 'accepted') result = '✅ Trade Completed';
+  else if (action === 'declined') result = '❌ Trade Declined';
+  else if (action === 'cancelled') result = '🗑️ Listing Cancelled';
+  else result = '⌛ Trade Expired';
+
+  const embed = new EmbedBuilder()
+    .setTitle(result)
+    .setDescription(
+      `**${listingUser.username}** traded:\n${reqEmoji} **${offer.requestedCar.name}** (#${offer.requestedCar.serial}) [${reqRarity}]\n\n` +
+      `with **${offerUser.username}** for:\n${offEmoji} **${offer.offeredCar.name}** (#${offer.offeredCar.serial}) [${offRarity}]`
+    )
+    .setTimestamp()
+    .setColor(action === 'accepted' ? 0x00FFAA : 0x555555);
+
+  const channel = await client.channels.fetch(TRADE_HISTORY_CHANNEL_ID);
+  await channel.send({ embeds: [embed] });
+}
+
 // --- /trade command handler ---
 async function handleTradeCommand(interaction, TRADE_COMMAND_CHANNEL_ID) {
   const userId = interaction.user.id;
@@ -249,6 +296,20 @@ async function handleOfferButton(interaction) {
     });
   }
 
+  // Decline
+  if (action === 'declineOffer') {
+    await TradeOffer.updateOne({ messageId: offerMsgId }, { status: 'declined' });
+    await interaction.update({ content: '❌ Trade declined.', components: [] });
+    return;
+  }
+
+  // Cancel Confirm
+  if (action === 'cancelTradeConfirm') {
+    await interaction.update({ content: '❌ Trade was not accepted.', components: [] });
+    return;
+  }
+
+  // Accept
   if (action === 'acceptOffer') {
     // Double confirm
     if (confirmFlag !== 'confirmed') {
@@ -269,44 +330,31 @@ async function handleOfferButton(interaction) {
       });
       return;
     }
-  }
 
-  // --- Actual trade logic, only runs on confirm! ---
-  const offerUpdate = await TradeOffer.findOneAndUpdate(
-    { messageId: offerMsgId, status: 'pending' },
-    { status: 'accepted' }
-  );
-  if (!offerUpdate) {
-    return interaction.reply({ content: '❌ Offer no longer valid.', flags: 64 });
-  }
+    // Actual trade logic, only runs on confirm!
+    const offerUpdate = await TradeOffer.findOneAndUpdate(
+      { messageId: offerMsgId, status: 'pending' },
+      { status: 'accepted' }
+    );
+    if (!offerUpdate) {
+      return interaction.reply({ content: '❌ Offer no longer valid.', flags: 64 });
+    }
 
-  const fromGarage = await Garage.findOne({ userId: offer.fromUserId });
-  const toGarage = await Garage.findOne({ userId: offer.toUserId });
+    const fromGarage = await Garage.findOne({ userId: offer.fromUserId });
+    const toGarage = await Garage.findOne({ userId: offer.toUserId });
 
-  fromGarage.cars = fromGarage.cars.filter(
-    c => !(c.name === offer.offeredCar.name && c.serial === offer.offeredCar.serial)
-  );
-  toGarage.cars = toGarage.cars.filter(
-    c => !(c.name === offer.requestedCar.name && c.serial === offer.requestedCar.serial)
-  );
-  fromGarage.cars.push(offer.requestedCar);
-  toGarage.cars.push(offer.offeredCar);
-  await fromGarage.save();
-  await toGarage.save();
+    fromGarage.cars = fromGarage.cars.filter(
+      c => !(c.name === offer.offeredCar.name && c.serial === offer.offeredCar.serial)
+    );
+    toGarage.cars = toGarage.cars.filter(
+      c => !(c.name === offer.requestedCar.name && c.serial === offer.requestedCar.serial)
+    );
+    fromGarage.cars.push(offer.requestedCar);
+    toGarage.cars.push(offer.offeredCar);
+    await fromGarage.save();
+    await toGarage.save();
 
-  await interaction.update({ content: '✅ Trade completed successfully!', components: [] });
-  return;
-
-  // --- Cancel confirmation handler ---
-  if (action === 'cancelTradeConfirm') {
-    await interaction.update({ content: '❌ Trade was not accepted.', components: [] });
-    return;
-  }
-
-  // --- Decline handler ---
-  if (action === 'declineOffer') {
-    await TradeOffer.updateOne({ messageId: offerMsgId }, { status: 'declined' });
-    await interaction.update({ content: '❌ Trade declined.', components: [] });
+    await interaction.update({ content: '✅ Trade completed successfully!', components: [] });
     return;
   }
 }
@@ -320,4 +368,5 @@ module.exports = {
   handleSendOfferButton,
   handleChooseOfferMenu,
   handleOfferButton,
+  logTradeHistory,
 };
