@@ -2,6 +2,7 @@ require('dotenv').config();
 require('./keepAlive');
 const fs = require('fs');
 const mongoose = require('mongoose');
+const { dropCar } = require('./dropCar.js');
 const trade = require('./trade.js');
 const {
   Client, GatewayIntentBits, EmbedBuilder,
@@ -116,8 +117,8 @@ const cars = [
 const nascarUnlockCar = '2022 Mustang NASCAR Cup Car';
 const requiredForNascar = ['2024 Mustang GT3', '2024 Mustang GT4', '2025 Mustang GTD'];
 
-let activeDrop = null;
-let dropTimeout = null;
+// Drop state object for tracking active drop and timeout
+let dropState = { activeDrop: null, dropTimeout: null };
 const claimingUsers = new Set();
 const claimCooldowns = new Map();
 
@@ -212,29 +213,8 @@ function renderGaragePage(viewerId, garage, globalCount, pageIndex, garageOwnerU
 function scheduleNextDrop(channel) {
   const delay = Math.floor(Math.random() * (45 - 10 + 1) + 10) * 60 * 1000;
   setTimeout(() => {
-    if (!activeDrop) dropCar(channel);
+    if (!dropState.activeDrop) dropCar(channel, getRandomCar, scheduleNextDrop, dropState);
   }, delay);
-}
-function dropCar(channel) {
-  if (activeDrop) return;
-  const car = getRandomCar();
-  const embed = new EmbedBuilder()
-    .setTitle(`🚗 A wild ${car.name} appeared!`)
-    .setDescription(`${getRarityTag(car)}
-Use \`/claim\` in 1 minute!`)
-    .setColor(rarityColors[car.rarity] || 0xFFFFFF);
-
-  channel.send({ embeds: [embed] }).then(msg => {
-    activeDrop = { car, claimed: false, message: msg };
-    dropTimeout = setTimeout(() => {
-      if (!activeDrop.claimed) {
-        msg.delete().catch(() => {});
-        channel.send(`⏱️ The **${car.name}** disappeared.`);
-      }
-      activeDrop = null;
-      scheduleNextDrop(channel);
-    }, 60000);
-  });
 }
 
 trade.setTradeDependencies({ Garage, TradeListing, TradeOffer, cars, log });
@@ -413,20 +393,20 @@ client.on('interactionCreate', async (interaction) => {
       }
       claimCooldowns.set(userId, now);
 
-      if (!activeDrop) return interaction.reply({ content: '❌ No car to claim.', flags: 64 });
-      if (activeDrop.claimed) return interaction.reply({ content: '⚠️ Already claimed.', flags: 64 });
+      if (!dropState.activeDrop) return interaction.reply({ content: '❌ No car to claim.', flags: 64 });
+      if (dropState.activeDrop.claimed) return interaction.reply({ content: '⚠️ Already claimed.', flags: 64 });
       if (claimingUsers.has(userId)) return;
       claimingUsers.add(userId);
       try {
-        activeDrop.claimed = true;
-        clearTimeout(dropTimeout);
-        await activeDrop.message.delete().catch(() => {});
-        await channel.send(`${user.username} claimed **${activeDrop.car.name}**! 🏁`);
+        dropState.activeDrop.claimed = true;
+        clearTimeout(dropState.dropTimeout);
+        await dropState.activeDrop.message.delete().catch(() => {});
+        await channel.send(`${user.username} claimed **${dropState.activeDrop.car.name}**! 🏁`);
         let garage = await Garage.findOne({ userId });
         if (!garage) garage = new Garage({ userId, cars: [] });
         const allGarages = await Garage.find();
-        const globalCarCount = allGarages.reduce((sum, g) => sum + g.cars.filter(c => c.name === activeDrop.car.name).length, 0);
-        garage.cars.push({ name: activeDrop.car.name, serial: globalCarCount + 1 });
+        const globalCarCount = allGarages.reduce((sum, g) => sum + g.cars.filter(c => c.name === dropState.activeDrop.car.name).length, 0);
+        garage.cars.push({ name: dropState.activeDrop.car.name, serial: globalCarCount + 1 });
 
         if (
           new Date() <= new Date('2025-05-31') &&
@@ -438,7 +418,7 @@ client.on('interactionCreate', async (interaction) => {
         }
 
         await garage.save();
-        activeDrop = null;
+        dropState.activeDrop = null;
         scheduleNextDrop(channel);
         await interaction.reply({ content: '✅ You claimed the car!', flags: 64 });
       } catch (error) {
@@ -453,7 +433,7 @@ client.on('interactionCreate', async (interaction) => {
     if (commandName === 'drop') {
       if (!member.permissions.has(PermissionFlagsBits.Administrator)) return interaction.reply({ content: '❌ No permission.', flags: 64 });
       try {
-        dropCar(channel);
+        dropCar(channel, getRandomCar, scheduleNextDrop, dropState);
         return interaction.reply({ content: '🚗 Car dropped.', flags: 64 });
       } catch (error) {
         log(`ERROR in /drop: ${error}`);
