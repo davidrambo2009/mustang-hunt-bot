@@ -2,7 +2,7 @@ require('dotenv').config();
 require('./keepAlive');
 const fs = require('fs');
 const mongoose = require('mongoose');
-const { dropCar } = require('./dropCar.js');
+const { dropCar, getRarityEmoji, rarityColors } = require('./dropCar.js');
 const trade = require('./trade.js');
 const {
   Client, GatewayIntentBits, EmbedBuilder,
@@ -62,7 +62,7 @@ const tradeOfferSchema = new mongoose.Schema({
 });
 const TradeOffer = mongoose.model('TradeOffer', tradeOfferSchema);
 
-const rarityColors = {
+const rarityColorsLocal = {
   Common: 0xAAAAAA,
   Uncommon: 0x00FF00,
   Rare: 0x0099FF,
@@ -401,7 +401,15 @@ client.on('interactionCreate', async (interaction) => {
         dropState.activeDrop.claimed = true;
         clearTimeout(dropState.dropTimeout);
         await dropState.activeDrop.message.delete().catch(() => {});
-        await channel.send(`${user.username} claimed **${dropState.activeDrop.car.name}**! 🏁`);
+        const claimEmbed = new EmbedBuilder()
+          .setTitle('🏆 Mustang Claimed!')
+          .setDescription(
+            `**${user.username}** claimed\n` +
+            `> 🚗 **${dropState.activeDrop.car.name}** ${getRarityEmoji(dropState.activeDrop.car.rarity)}`
+          )
+          .setColor(rarityColors[dropState.activeDrop.car.rarity] || 0x00BFFF)
+          .setFooter({ text: 'Congratulations on your new ride!' });
+        await channel.send({ embeds: [claimEmbed] });
         let garage = await Garage.findOne({ userId });
         if (!garage) garage = new Garage({ userId, cars: [] });
         const allGarages = await Garage.find();
