@@ -69,6 +69,17 @@ function getCarEmbedVisuals(carName) {
   };
 }
 
+// Utility: safe reply in error situations
+async function safeReply(interaction, msg, ephemeral = true) {
+  if (!interaction.replied && !interaction.deferred) {
+    await interaction.reply({ content: msg, ephemeral });
+  } else {
+    try {
+      await interaction.editReply({ content: msg });
+    } catch {}
+  }
+}
+
 // --- Trade History Logger (for trade-history channel) ---
 async function logTradeHistory({
   client,
@@ -123,405 +134,438 @@ async function logTradeHistory({
 
 // --- /trade command handler ---
 async function handleTradeCommand(interaction, TRADE_COMMAND_CHANNEL_ID) {
-  const userId = interaction.user.id;
-  if (interaction.channel.id !== TRADE_COMMAND_CHANNEL_ID) {
-    return interaction.reply({
-      content: `❌ Please use this command in <#${TRADE_COMMAND_CHANNEL_ID}>.`,
-      flags: 64
-    });
-  }
-  const garage = await Garage.findOne({ userId });
-  if (!garage || garage.cars.length === 0)
-    return interaction.reply({ content: '🚫 Your garage is empty.', flags: 64 });
-
-  const uniqueChoices = new Set();
-  const carChoices = [];
-  for (const c of garage.cars) {
-    const value = `${encodeURIComponent(c.name)}#${c.serial}`;
-    if (!uniqueChoices.has(value)) {
-      uniqueChoices.add(value);
-      carChoices.push({
-        label: `${c.name} (#${c.serial})`,
-        value
-      });
+  try {
+    const userId = interaction.user.id;
+    if (interaction.channel.id !== TRADE_COMMAND_CHANNEL_ID) {
+      return safeReply(interaction, `❌ Please use this command in <#${TRADE_COMMAND_CHANNEL_ID}>.`);
     }
+    const garage = await Garage.findOne({ userId });
+    if (!garage || garage.cars.length === 0)
+      return safeReply(interaction, '🚫 Your garage is empty.');
+
+    const uniqueChoices = new Set();
+    const carChoices = [];
+    for (const c of garage.cars) {
+      const value = `${encodeURIComponent(c.name)}#${c.serial}`;
+      if (!uniqueChoices.has(value)) {
+        uniqueChoices.add(value);
+        carChoices.push({
+          label: `${c.name} (#${c.serial})`,
+          value
+        });
+      }
+    }
+    const limitedCarChoices = carChoices.slice(0, 25);
+    const row = new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId(`tradeSelect:${userId}`)
+        .setPlaceholder('Select a car to list for trade')
+        .addOptions(limitedCarChoices)
+    );
+    await interaction.reply({ content: 'Select a car from your garage to list for trade:', components: [row], flags: 64 });
+  } catch (error) {
+    log && log("Error in handleTradeCommand: " + error);
+    await safeReply(interaction, '❌ An error occurred in /trade.');
   }
-  const limitedCarChoices = carChoices.slice(0, 25);
-  const row = new ActionRowBuilder().addComponents(
-    new StringSelectMenuBuilder()
-      .setCustomId(`tradeSelect:${userId}`)
-      .setPlaceholder('Select a car to list for trade')
-      .addOptions(limitedCarChoices)
-  );
-  await interaction.reply({ content: 'Select a car from your garage to list for trade:', components: [row], flags: 64 });
 }
 
 // --- /canceltrade command handler ---
 async function handleCancelTradeCommand(interaction, TRADE_POSTS_CHANNEL_ID) {
-  if (!TRADE_POSTS_CHANNEL_ID) log && log("TRADE_POSTS_CHANNEL_ID is missing!");
-  const userId = interaction.user.id;
-  const listings = await TradeListing.find({ userId, active: true });
-  if (!listings.length) return interaction.reply({ content: '🚫 No active listings found.', flags: 64 });
+  try {
+    if (!TRADE_POSTS_CHANNEL_ID) log && log("TRADE_POSTS_CHANNEL_ID is missing!");
+    const userId = interaction.user.id;
+    const listings = await TradeListing.find({ userId, active: true });
+    if (!listings.length) return safeReply(interaction, '🚫 No active listings found.');
 
-  const channel = await interaction.client.channels.fetch(TRADE_POSTS_CHANNEL_ID);
-  for (const listing of listings) {
-    try {
-      const msg = await channel.messages.fetch(listing.messageId);
-      await msg.edit({ content: '🗑️ This trade listing was cancelled.', embeds: [], components: [] });
-    } catch (err) {
-      log && log(`Failed to update listing message: ${err}`);
+    const channel = await interaction.client.channels.fetch(TRADE_POSTS_CHANNEL_ID);
+    for (const listing of listings) {
+      try {
+        const msg = await channel.messages.fetch(listing.messageId);
+        await msg.edit({ content: '🗑️ This trade listing was cancelled.', embeds: [], components: [] });
+      } catch (err) {
+        log && log(`Failed to update listing message: ${err}`);
+      }
+      await TradeListing.findByIdAndUpdate(listing._id, { active: false });
     }
-    await TradeListing.findByIdAndUpdate(listing._id, { active: false });
+    await interaction.reply({ content: '🗑️ All active listings canceled.', flags: 64 });
+  } catch (error) {
+    log && log("Error in handleCancelTradeCommand: " + error);
+    await safeReply(interaction, '❌ An error occurred.');
   }
-  await interaction.reply({ content: '🗑️ All active listings canceled.', flags: 64 });
 }
 
 // --- trade car selection menu handler ---
 async function handleTradeSelectMenu(interaction) {
-  const [_, userId] = interaction.customId.split(':');
-  const [carNameEncoded, serial] = interaction.values[0].split('#');
-  const carName = decodeURIComponent(carNameEncoded).trim();
+  try {
+    const [_, userId] = interaction.customId.split(':');
+    const [carNameEncoded, serial] = interaction.values[0].split('#');
+    const carName = decodeURIComponent(carNameEncoded).trim();
 
-  // Show a modal to collect the note
-  const noteModal = new ModalBuilder()
-    .setCustomId(`tradeNoteModal:${encodeURIComponent(carName)}#${serial}`)
-    .setTitle('Add a note to your listing (optional)');
+    // Show a modal to collect the note
+    const noteModal = new ModalBuilder()
+      .setCustomId(`tradeNoteModal:${encodeURIComponent(carName)}#${serial}`)
+      .setTitle('Add a note to your listing (optional)');
 
-  const noteInput = new TextInputBuilder()
-    .setCustomId('tradeNote')
-    .setLabel('Trade note (optional)')
-    .setStyle(TextInputStyle.Short)
-    .setRequired(false)
-    .setPlaceholder('Ex: Looking for something rare!');
+    const noteInput = new TextInputBuilder()
+      .setCustomId('tradeNote')
+      .setLabel('Trade note (optional)')
+      .setStyle(TextInputStyle.Short)
+      .setRequired(false)
+      .setPlaceholder('Ex: Looking for something rare!');
 
-  noteModal.addComponents(
-    new ActionRowBuilder().addComponents(noteInput)
-  );
-  await interaction.showModal(noteModal);
+    noteModal.addComponents(
+      new ActionRowBuilder().addComponents(noteInput)
+    );
+    await interaction.showModal(noteModal);
+  } catch (error) {
+    log && log("Error in handleTradeSelectMenu: " + error);
+    await safeReply(interaction, '❌ An error occurred.');
+  }
 }
 
 // --- modal submit handler for trade note ---
 async function handleTradeNoteModal(interaction, TRADE_POSTS_CHANNEL_ID) {
-  if (!TRADE_POSTS_CHANNEL_ID) log && log("TRADE_POSTS_CHANNEL_ID is missing!");
-  const [carNameEncoded, serial] = interaction.customId.replace('tradeNoteModal:', '').split('#');
-  const carName = decodeURIComponent(carNameEncoded).trim();
-  const note = interaction.fields.getTextInputValue('tradeNote') || '';
-  const userId = interaction.user.id;
+  try {
+    if (!TRADE_POSTS_CHANNEL_ID) log && log("TRADE_POSTS_CHANNEL_ID is missing!");
+    const [carNameEncoded, serial] = interaction.customId.replace('tradeNoteModal:', '').split('#');
+    const carName = decodeURIComponent(carNameEncoded).trim();
+    const note = interaction.fields.getTextInputValue('tradeNote') || '';
+    const userId = interaction.user.id;
 
-  const tradeChannel = await interaction.client.channels.fetch(TRADE_POSTS_CHANNEL_ID);
+    const tradeChannel = await interaction.client.channels.fetch(TRADE_POSTS_CHANNEL_ID);
 
-  // Stylized embed
-  const { badge, color, emoji } = getCarEmbedVisuals(carName);
+    // Stylized embed
+    const { badge, color, emoji } = getCarEmbedVisuals(carName);
 
-  const embed = new EmbedBuilder()
-    .setColor(color)
-    .setAuthor({ 
-      name: `${interaction.user.username} is offering:`, 
-      iconURL: interaction.user.displayAvatarURL() 
-    })
-    .setTitle(`${badge}`)
-    .setDescription(
-      `**${emoji} ${carName}**  \`#${serial}\`\n` +
-      (note ? `\n📝 ${note}` : '') +
-      `\n⏳ **Expires in 3 hours**`
-    )
-    .setFooter({ text: `Listed by ${interaction.user.username}` });
+    const embed = new EmbedBuilder()
+      .setColor(color)
+      .setAuthor({
+        name: `${interaction.user.username} is offering:`,
+        iconURL: interaction.user.displayAvatarURL()
+      })
+      .setTitle(`${badge}`)
+      .setDescription(
+        `**${emoji} ${carName}**  \`#${serial}\`\n` +
+        (note ? `\n📝 ${note}` : '') +
+        `\n⏳ **Expires in 3 hours**`
+      )
+      .setFooter({ text: `Listed by ${interaction.user.username}` });
 
-  const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId(`sendOffer:${userId}:${encodeURIComponent(carName)}:${serial}`)
-      .setLabel('💬 Send Offer')
-      .setStyle(ButtonStyle.Primary)
-  );
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`sendOffer:${userId}:${encodeURIComponent(carName)}:${serial}`)
+        .setLabel('💬 Send Offer')
+        .setStyle(ButtonStyle.Primary)
+    );
 
-  const msg = await tradeChannel.send({ embeds: [embed], components: [row] });
+    const msg = await tradeChannel.send({ embeds: [embed], components: [row] });
 
-  // Save listing only ONCE
-  const newListing = await new TradeListing({
-    userId,
-    car: { name: carName, serial: parseInt(serial) },
-    note,
-    messageId: msg.id,
-    active: true
-  }).save();
+    // Save listing only ONCE
+    const newListing = await new TradeListing({
+      userId,
+      car: { name: carName, serial: parseInt(serial) },
+      note,
+      messageId: msg.id,
+      active: true
+    }).save();
 
-  setTimeout(async () => {
-    await TradeListing.findByIdAndUpdate(newListing._id, { active: false });
-    try {
-      const channel = await interaction.client.channels.fetch(TRADE_POSTS_CHANNEL_ID);
-      const msgToEdit = await channel.messages.fetch(newListing.messageId);
-      await msgToEdit.edit({
-        content: '⌛ This trade listing expired.',
-        embeds: [],
-        components: []
-      });
-    } catch (e) {}
-  }, 3 * 60 * 60 * 1000);
+    setTimeout(async () => {
+      await TradeListing.findByIdAndUpdate(newListing._id, { active: false });
+      try {
+        const channel = await interaction.client.channels.fetch(TRADE_POSTS_CHANNEL_ID);
+        const msgToEdit = await channel.messages.fetch(newListing.messageId);
+        await msgToEdit.edit({
+          content: '⌛ This trade listing expired.',
+          embeds: [],
+          components: []
+        });
+      } catch (e) { }
+    }, 3 * 60 * 60 * 1000);
 
-  await interaction.reply({ content: `✅ Trade listing posted to <#${TRADE_POSTS_CHANNEL_ID}>!`, flags: 64 });
+    await interaction.reply({ content: `✅ Trade listing posted to <#${TRADE_POSTS_CHANNEL_ID}>!`, flags: 64 });
+  } catch (error) {
+    log && log("Error in handleTradeNoteModal: " + error);
+    await safeReply(interaction, '❌ An error occurred posting your trade.');
+  }
 }
 
 // --- send offer button handler ---
 async function handleSendOfferButton(interaction) {
-  const parts = interaction.customId.split(':');
-  const [ , listingOwnerId, carNameEncoded, serial ] = parts;
-  const carName = decodeURIComponent(carNameEncoded).trim();
+  try {
+    const parts = interaction.customId.split(':');
+    const [, listingOwnerId, carNameEncoded, serial] = parts;
+    const carName = decodeURIComponent(carNameEncoded).trim();
 
-  if (interaction.user.id === listingOwnerId) {
-    return interaction.reply({ content: "❌ You can't send an offer to yourself.", flags: 64 });
-  }
-
-  const fromGarage = await Garage.findOne({ userId: interaction.user.id });
-  if (!fromGarage || fromGarage.cars.length === 0)
-    return interaction.reply({ content: '🚫 You have no cars to offer.', flags: 64 });
-
-  const uniqueChoices = new Set();
-  const carChoices = [];
-  for (const c of fromGarage.cars) {
-    const value = `${encodeURIComponent(c.name)}#${c.serial}`;
-    if (!uniqueChoices.has(value)) {
-      uniqueChoices.add(value);
-      carChoices.push({
-        label: `${c.name} (#${c.serial})`,
-        value
-      });
+    if (interaction.user.id === listingOwnerId) {
+      return safeReply(interaction, "❌ You can't send an offer to yourself.");
     }
+
+    const fromGarage = await Garage.findOne({ userId: interaction.user.id });
+    if (!fromGarage || fromGarage.cars.length === 0)
+      return safeReply(interaction, '🚫 You have no cars to offer.');
+
+    const uniqueChoices = new Set();
+    const carChoices = [];
+    for (const c of fromGarage.cars) {
+      const value = `${encodeURIComponent(c.name)}#${c.serial}`;
+      if (!uniqueChoices.has(value)) {
+        uniqueChoices.add(value);
+        carChoices.push({
+          label: `${c.name} (#${c.serial})`,
+          value
+        });
+      }
+    }
+    const limitedCarChoices = carChoices.slice(0, 25);
+
+    const row = new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId(`chooseOffer:${interaction.user.id}:${listingOwnerId}:${encodeURIComponent(carName)}:${serial}`)
+        .setPlaceholder('Select a car to offer')
+        .addOptions(limitedCarChoices)
+    );
+
+    return interaction.reply({ content: 'Select a car to offer in trade:', components: [row], flags: 64 });
+  } catch (error) {
+    log && log("Error in handleSendOfferButton: " + error);
+    await safeReply(interaction, '❌ An error occurred.');
   }
-  const limitedCarChoices = carChoices.slice(0, 25);
-
-  const row = new ActionRowBuilder().addComponents(
-    new StringSelectMenuBuilder()
-      .setCustomId(`chooseOffer:${interaction.user.id}:${listingOwnerId}:${encodeURIComponent(carName)}:${serial}`)
-      .setPlaceholder('Select a car to offer')
-      .addOptions(limitedCarChoices)
-  );
-
-  return interaction.reply({ content: 'Select a car to offer in trade:', components: [row], flags: 64 });
 }
 
 // --- trade offer selection handler ---
 async function handleChooseOfferMenu(interaction, TRADEOFFERS_CHANNEL_ID) {
-  if (!TRADEOFFERS_CHANNEL_ID) log && log("TRADEOFFERS_CHANNEL_ID is missing!");
-  const [_, senderId, receiverId, carNameEncoded, serial] = interaction.customId.split(':');
-  const carName = decodeURIComponent(carNameEncoded).trim();
-  const selected = interaction.values[0];
-  const [offeredNameEncoded, offeredSerial] = selected.split('#');
-  const offeredName = decodeURIComponent(offeredNameEncoded).trim();
+  try {
+    if (!TRADEOFFERS_CHANNEL_ID) log && log("TRADEOFFERS_CHANNEL_ID is missing!");
+    const [_, senderId, receiverId, carNameEncoded, serial] = interaction.customId.split(':');
+    const carName = decodeURIComponent(carNameEncoded).trim();
+    const selected = interaction.values[0];
+    const [offeredNameEncoded, offeredSerial] = selected.split('#');
+    const offeredName = decodeURIComponent(offeredNameEncoded).trim();
 
-  const parsedSerial = parseInt(serial, 10);
-  const parsedOfferedSerial = parseInt(offeredSerial, 10);
+    const parsedSerial = parseInt(serial, 10);
+    const parsedOfferedSerial = parseInt(offeredSerial, 10);
 
-  const newOffer = await new TradeOffer({
-    fromUserId: senderId,
-    toUserId: receiverId,
-    offeredCar: { name: offeredName, serial: parsedOfferedSerial },
-    requestedCar: { name: carName, serial: parsedSerial },
-    messageId: null,
-    status: 'pending'
-  }).save();
+    const newOffer = await new TradeOffer({
+      fromUserId: senderId,
+      toUserId: receiverId,
+      offeredCar: { name: offeredName, serial: parsedOfferedSerial },
+      requestedCar: { name: carName, serial: parsedSerial },
+      messageId: null,
+      status: 'pending'
+    }).save();
 
-  const sender = await interaction.client.users.fetch(senderId);
+    const sender = await interaction.client.users.fetch(senderId);
 
-  const { rarity: offerRarity, emoji: offerEmoji, color: offerColor } = getCarEmbedVisuals(offeredName);
-  const { rarity: reqRarity, emoji: reqEmoji } = getCarEmbedVisuals(carName);
+    const { rarity: offerRarity, emoji: offerEmoji, color: offerColor } = getCarEmbedVisuals(offeredName);
+    const { rarity: reqRarity, emoji: reqEmoji } = getCarEmbedVisuals(carName);
 
-  const tradeOfferEmbed = new EmbedBuilder()
-    .setColor(offerColor)
-    .setTitle("Trade Offer")
-    .setDescription(
-      `👤 **${sender.username} is offering:**\n` +
-      `${offerEmoji} **${offeredName}** (#${parsedOfferedSerial}) [${offerRarity}]\n\n` +
-      `**For:** ${reqEmoji} **${carName}** (#${parsedSerial}) [${reqRarity}]`
+    const tradeOfferEmbed = new EmbedBuilder()
+      .setColor(offerColor)
+      .setTitle("Trade Offer")
+      .setDescription(
+        `👤 **${sender.username} is offering:**\n` +
+        `${offerEmoji} **${offeredName}** (#${parsedOfferedSerial}) [${offerRarity}]\n\n` +
+        `**For:** ${reqEmoji} **${carName}** (#${parsedSerial}) [${reqRarity}]`
+      );
+
+    const offerRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`acceptOffer:${senderId}:${receiverId}:${newOffer._id}`)
+        .setLabel('✅ Accept')
+        .setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId(`declineOffer:${senderId}:${receiverId}:${newOffer._id}`)
+        .setLabel('❌ Decline')
+        .setStyle(ButtonStyle.Danger)
     );
 
-  const offerRow = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId(`acceptOffer:${senderId}:${receiverId}:${newOffer._id}`)
-      .setLabel('✅ Accept')
-      .setStyle(ButtonStyle.Success),
-    new ButtonBuilder()
-      .setCustomId(`declineOffer:${senderId}:${receiverId}:${newOffer._id}`)
-      .setLabel('❌ Decline')
-      .setStyle(ButtonStyle.Danger)
-  );
+    const tradeOffersChannel = await interaction.client.channels.fetch(TRADEOFFERS_CHANNEL_ID);
+    const offerMsg = await tradeOffersChannel.send({ embeds: [tradeOfferEmbed], components: [offerRow] });
 
-  const tradeOffersChannel = await interaction.client.channels.fetch(TRADEOFFERS_CHANNEL_ID);
-  const offerMsg = await tradeOffersChannel.send({ embeds: [tradeOfferEmbed], components: [offerRow] });
+    // Save messageId to offer
+    newOffer.messageId = offerMsg.id;
+    await newOffer.save();
 
-  // Save messageId to offer
-  newOffer.messageId = offerMsg.id;
-  await newOffer.save();
-
-  await interaction.reply({ content: '✅ Trade offer sent!', flags: 64 });
+    await interaction.reply({ content: '✅ Trade offer sent!', flags: 64 });
+  } catch (error) {
+    log && log("Error in handleChooseOfferMenu: " + error);
+    await safeReply(interaction, '❌ An error occurred sending your offer.');
+  }
 }
 
 // --- accept/decline/cancel offer handler ---
 async function handleOfferButton(interaction, TRADE_POSTS_CHANNEL_ID, TRADEOFFERS_CHANNEL_ID, TRADE_HISTORY_CHANNEL_ID) {
-  if (!TRADE_POSTS_CHANNEL_ID) log && log("TRADE_POSTS_CHANNEL_ID is missing!");
-  if (!TRADEOFFERS_CHANNEL_ID) log && log("TRADEOFFERS_CHANNEL_ID is missing!");
+  try {
+    if (!TRADE_POSTS_CHANNEL_ID) log && log("TRADE_POSTS_CHANNEL_ID is missing!");
+    if (!TRADEOFFERS_CHANNEL_ID) log && log("TRADEOFFERS_CHANNEL_ID is missing!");
 
-  const parts = interaction.customId.split(':');
-  const action = parts[0];
-  const [ , senderId, receiverId, offerId, confirmFlag ] = parts;
+    const parts = interaction.customId.split(':');
+    const action = parts[0];
+    const [, senderId, receiverId, offerId, confirmFlag] = parts;
 
-  // --- Always fetch the offer from DB to get the correct toUserId (listing owner) ---
-  const offer = await TradeOffer.findById(offerId);
-  if (!offer) {
-    return interaction.reply({ content: '❌ Offer not found or already handled.', flags: 64 });
-  }
-  if (interaction.user.id !== offer.toUserId) {
-    return interaction.reply({
-      content: "❌ Only the listing owner can accept or decline this trade.",
-      flags: 64
-    });
-  }
-
-  // Decline
-  if (action === 'declineOffer') {
-    await TradeOffer.findByIdAndUpdate(offerId, { status: 'declined' });
-    await interaction.update({ content: '❌ Trade declined.', components: [] });
-    // Remove offer embed
-    try {
-      const tradeOffersChannel = await interaction.client.channels.fetch(TRADEOFFERS_CHANNEL_ID);
-      const offerMsg = await tradeOffersChannel.messages.fetch(offer.messageId);
-      await offerMsg.edit({
-        content: '❌ This trade offer was declined.',
-        embeds: [],
-        components: []
-      });
-    } catch (e) { log && log("Failed to update trade offer message: " + e); }
-    // Also log decline to history
-    if (TRADE_HISTORY_CHANNEL_ID) {
-      await logTradeHistory({
-        client: interaction.client,
-        TRADE_HISTORY_CHANNEL_ID,
-        action: 'declined',
-        offer,
-        listingUser: await interaction.client.users.fetch(offer.toUserId),
-        offerUser: await interaction.client.users.fetch(offer.fromUserId)
-      });
+    // --- Always fetch the offer from DB to get the correct toUserId (listing owner) ---
+    const offer = await TradeOffer.findById(offerId);
+    if (!offer) {
+      return safeReply(interaction, '❌ Offer not found or already handled.');
     }
-    return;
-  }
-
-  // Cancel Confirm
-  if (action === 'cancelTradeConfirm') {
-    await interaction.update({ content: '❌ Trade was not accepted.', components: [] });
-    // Remove offer embed
-    try {
-      const tradeOffersChannel = await interaction.client.channels.fetch(TRADEOFFERS_CHANNEL_ID);
-      const offerMsg = await tradeOffersChannel.messages.fetch(offer.messageId);
-      await offerMsg.edit({
-        content: '🗑️ This trade offer is no longer active.',
-        embeds: [],
-        components: []
-      });
-    } catch (e) { log && log("Failed to update trade offer message: " + e); }
-    if (TRADE_HISTORY_CHANNEL_ID) {
-      await logTradeHistory({
-        client: interaction.client,
-        TRADE_HISTORY_CHANNEL_ID,
-        action: 'cancelled',
-        offer,
-        listingUser: await interaction.client.users.fetch(offer.toUserId),
-        offerUser: await interaction.client.users.fetch(offer.fromUserId)
-      });
-    }
-    return;
-  }
-
-  // Accept
-  if (action === 'acceptOffer') {
-    // Double confirm
-    if (confirmFlag !== 'confirmed') {
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId(`acceptOffer:${senderId}:${receiverId}:${offerId}:confirmed`)
-          .setLabel('✅ Yes, confirm trade')
-          .setStyle(ButtonStyle.Success),
-        new ButtonBuilder()
-          .setCustomId(`cancelTradeConfirm:${senderId}:${receiverId}:${offerId}`)
-          .setLabel('❌ Cancel')
-          .setStyle(ButtonStyle.Danger)
-      );
-      await interaction.reply({
-        content: 'Are you sure you want to accept this trade?\nThis action is **final** and will swap the cars between users.',
-        components: [row],
-        flags: 64
-      });
-      return;
+    if (interaction.user.id !== offer.toUserId) {
+      return safeReply(interaction, "❌ Only the listing owner can accept or decline this trade.");
     }
 
-    // Actual trade logic, only runs on confirm!
-    const offerUpdate = await TradeOffer.findOneAndUpdate(
-      { _id: offerId, status: 'pending' },
-      { status: 'accepted' }
-    );
-    if (!offerUpdate) {
-      return interaction.reply({ content: '❌ Offer no longer valid.', flags: 64 });
-    }
-
-    const fromGarage = await Garage.findOne({ userId: offer.fromUserId });
-    const toGarage = await Garage.findOne({ userId: offer.toUserId });
-
-    fromGarage.cars = fromGarage.cars.filter(
-      c => !(c.name === offer.offeredCar.name && c.serial === offer.offeredCar.serial)
-    );
-    toGarage.cars = toGarage.cars.filter(
-      c => !(c.name === offer.requestedCar.name && c.serial === offer.requestedCar.serial)
-    );
-    fromGarage.cars.push(offer.requestedCar);
-    toGarage.cars.push(offer.offeredCar);
-    await fromGarage.save();
-    await toGarage.save();
-
-    // Mark the listing inactive and update the trade post
-    const listing = await TradeListing.findOne({ 'car.name': offer.requestedCar.name, 'car.serial': offer.requestedCar.serial, active: true });
-    if (listing) {
-      listing.active = false;
-      await listing.save();
+    // Decline
+    if (action === 'declineOffer') {
+      await TradeOffer.findByIdAndUpdate(offerId, { status: 'declined' });
+      await interaction.update({ content: '❌ Trade declined.', components: [] });
+      // Remove offer embed
       try {
-        const tradePostsChannel = await interaction.client.channels.fetch(TRADE_POSTS_CHANNEL_ID);
-        const listingMsg = await tradePostsChannel.messages.fetch(listing.messageId);
-        await listingMsg.edit({
-          content: '✅ This trade has been completed and is no longer available.',
+        const tradeOffersChannel = await interaction.client.channels.fetch(TRADEOFFERS_CHANNEL_ID);
+        const offerMsg = await tradeOffersChannel.messages.fetch(offer.messageId);
+        await offerMsg.edit({
+          content: '❌ This trade offer was declined.',
           embeds: [],
           components: []
         });
-      } catch (err) { log && log("Failed to edit trade post: " + err); }
-    } else {
-      log && log('No TradeListing found for completed trade:', offer.requestedCar);
-    }
-
-    // Remove offer embed
-    try {
-      const tradeOffersChannel = await interaction.client.channels.fetch(TRADEOFFERS_CHANNEL_ID);
-      const offerMsg = await tradeOffersChannel.messages.fetch(offer.messageId);
-      await offerMsg.edit({
-        content: '✅ This trade offer has been accepted and is no longer available.',
-        embeds: [],
-        components: []
-      });
-    } catch (e) { log && log("Failed to update trade offer message: " + e); }
-
-    // Log the accepted trade to trade history
-    if (TRADE_HISTORY_CHANNEL_ID) {
-      try {
+      } catch (e) { log && log("Failed to update trade offer message: " + e); }
+      // Also log decline to history
+      if (TRADE_HISTORY_CHANNEL_ID) {
         await logTradeHistory({
           client: interaction.client,
           TRADE_HISTORY_CHANNEL_ID,
-          action: 'accepted',
+          action: 'declined',
           offer,
           listingUser: await interaction.client.users.fetch(offer.toUserId),
           offerUser: await interaction.client.users.fetch(offer.fromUserId)
         });
-      } catch (err) {
-        log && log('Failed to log trade history: ' + err);
       }
+      return;
     }
 
-    await interaction.update({ content: '✅ Trade completed successfully!', components: [] });
-    return;
+    // Cancel Confirm
+    if (action === 'cancelTradeConfirm') {
+      await interaction.update({ content: '❌ Trade was not accepted.', components: [] });
+      // Remove offer embed
+      try {
+        const tradeOffersChannel = await interaction.client.channels.fetch(TRADEOFFERS_CHANNEL_ID);
+        const offerMsg = await tradeOffersChannel.messages.fetch(offer.messageId);
+        await offerMsg.edit({
+          content: '🗑️ This trade offer is no longer active.',
+          embeds: [],
+          components: []
+        });
+      } catch (e) { log && log("Failed to update trade offer message: " + e); }
+      if (TRADE_HISTORY_CHANNEL_ID) {
+        await logTradeHistory({
+          client: interaction.client,
+          TRADE_HISTORY_CHANNEL_ID,
+          action: 'cancelled',
+          offer,
+          listingUser: await interaction.client.users.fetch(offer.toUserId),
+          offerUser: await interaction.client.users.fetch(offer.fromUserId)
+        });
+      }
+      return;
+    }
+
+    // Accept
+    if (action === 'acceptOffer') {
+      // Double confirm
+      if (confirmFlag !== 'confirmed') {
+        const row = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`acceptOffer:${senderId}:${receiverId}:${offerId}:confirmed`)
+            .setLabel('✅ Yes, confirm trade')
+            .setStyle(ButtonStyle.Success),
+          new ButtonBuilder()
+            .setCustomId(`cancelTradeConfirm:${senderId}:${receiverId}:${offerId}`)
+            .setLabel('❌ Cancel')
+            .setStyle(ButtonStyle.Danger)
+        );
+        await safeReply(
+          interaction,
+          'Are you sure you want to accept this trade?\nThis action is **final** and will swap the cars between users.',
+          false
+        );
+        if (interaction.replied || interaction.deferred)
+          await interaction.editReply({ components: [row] });
+        else
+          await interaction.reply({ components: [row], ephemeral: false });
+        return;
+      }
+
+      // Actual trade logic, only runs on confirm!
+      const offerUpdate = await TradeOffer.findOneAndUpdate(
+        { _id: offerId, status: 'pending' },
+        { status: 'accepted' }
+      );
+      if (!offerUpdate) {
+        return safeReply(interaction, '❌ Offer no longer valid.');
+      }
+
+      const fromGarage = await Garage.findOne({ userId: offer.fromUserId });
+      const toGarage = await Garage.findOne({ userId: offer.toUserId });
+
+      fromGarage.cars = fromGarage.cars.filter(
+        c => !(c.name === offer.offeredCar.name && c.serial === offer.offeredCar.serial)
+      );
+      toGarage.cars = toGarage.cars.filter(
+        c => !(c.name === offer.requestedCar.name && c.serial === offer.requestedCar.serial)
+      );
+      fromGarage.cars.push(offer.requestedCar);
+      toGarage.cars.push(offer.offeredCar);
+      await fromGarage.save();
+      await toGarage.save();
+
+      // Mark the listing inactive and update the trade post
+      const listing = await TradeListing.findOne({ 'car.name': offer.requestedCar.name, 'car.serial': offer.requestedCar.serial, active: true });
+      if (listing) {
+        listing.active = false;
+        await listing.save();
+        try {
+          const tradePostsChannel = await interaction.client.channels.fetch(TRADE_POSTS_CHANNEL_ID);
+          const listingMsg = await tradePostsChannel.messages.fetch(listing.messageId);
+          await listingMsg.edit({
+            content: '✅ This trade has been completed and is no longer available.',
+            embeds: [],
+            components: []
+          });
+        } catch (err) { log && log("Failed to edit trade post: " + err); }
+      } else {
+        log && log('No TradeListing found for completed trade:', offer.requestedCar);
+      }
+
+      // Remove offer embed
+      try {
+        const tradeOffersChannel = await interaction.client.channels.fetch(TRADEOFFERS_CHANNEL_ID);
+        const offerMsg = await tradeOffersChannel.messages.fetch(offer.messageId);
+        await offerMsg.edit({
+          content: '✅ This trade offer has been accepted and is no longer available.',
+          embeds: [],
+          components: []
+        });
+      } catch (e) { log && log("Failed to update trade offer message: " + e); }
+
+      // Log the accepted trade to trade history
+      if (TRADE_HISTORY_CHANNEL_ID) {
+        try {
+          await logTradeHistory({
+            client: interaction.client,
+            TRADE_HISTORY_CHANNEL_ID,
+            action: 'accepted',
+            offer,
+            listingUser: await interaction.client.users.fetch(offer.toUserId),
+            offerUser: await interaction.client.users.fetch(offer.fromUserId)
+          });
+        } catch (err) {
+          log && log('Failed to log trade history: ' + err);
+        }
+      }
+
+      await interaction.update({ content: '✅ Trade completed successfully!', components: [] });
+      return;
+    }
+  } catch (error) {
+    log && log("Error in handleOfferButton: " + error);
+    await safeReply(interaction, '❌ An error occurred handling the trade action.');
   }
 }
 
