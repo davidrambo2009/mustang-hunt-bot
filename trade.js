@@ -1,30 +1,3 @@
-/**
- * NOTE: For this file to work correctly, you MUST always call these handlers with the correct channel IDs:
- *   - handleOfferButton(interaction, TRADE_POSTS_CHANNEL_ID, TRADEOFFERS_CHANNEL_ID)
- *   - handleChooseOfferMenu(interaction, TRADEOFFERS_CHANNEL_ID)
- *   - handleTradeNoteModal(interaction, TRADE_POSTS_CHANNEL_ID)
- *   - handleCancelTradeCommand(interaction, TRADE_POSTS_CHANNEL_ID)
- * 
- * Example usage in your main bot file:
- * 
- * const TRADE_POSTS_CHANNEL_ID = '1374486602012692581';
- * const TRADEOFFERS_CHANNEL_ID = '1374486704387264512';
- * 
- * // In your interaction handler:
- * if (interaction.isButton() && (interaction.customId.startsWith('acceptOffer') || interaction.customId.startsWith('declineOffer') || interaction.customId.startsWith('cancelTradeConfirm'))) {
- *   await handleOfferButton(interaction, TRADE_POSTS_CHANNEL_ID, TRADEOFFERS_CHANNEL_ID);
- * }
- * if (interaction.isSelectMenu() && interaction.customId.startsWith('chooseOffer')) {
- *   await handleChooseOfferMenu(interaction, TRADEOFFERS_CHANNEL_ID);
- * }
- * if (interaction.isModalSubmit() && interaction.customId.startsWith('tradeNoteModal')) {
- *   await handleTradeNoteModal(interaction, TRADE_POSTS_CHANNEL_ID);
- * }
- * if (interaction.isChatInputCommand() && interaction.commandName === 'canceltrade') {
- *   await handleCancelTradeCommand(interaction, TRADE_POSTS_CHANNEL_ID);
- * }
- */
-
 const {
   EmbedBuilder,
   ActionRowBuilder,
@@ -105,39 +78,47 @@ async function logTradeHistory({
   listingUser,
   offerUser
 }) {
-  let color = 0x21d97a;
-  let title = "✅ **Trade Completed**";
-  if (action === "declined") {
-    color = 0xc72c3b;
-    title = "❌ **Trade Declined**";
-  } else if (action === "cancelled") {
-    color = 0xfba505;
-    title = "🗑️ **Trade Cancelled**";
-  } else if (action === "expired") {
-    color = 0x888888;
-    title = "⌛ **Trade Expired**";
+  try {
+    if (!TRADE_HISTORY_CHANNEL_ID) {
+      log && log("TRADE_HISTORY_CHANNEL_ID is missing!");
+      return;
+    }
+    let color = 0x21d97a;
+    let title = "✅ **Trade Completed**";
+    if (action === "declined") {
+      color = 0xc72c3b;
+      title = "❌ **Trade Declined**";
+    } else if (action === "cancelled") {
+      color = 0xfba505;
+      title = "🗑️ **Trade Cancelled**";
+    } else if (action === "expired") {
+      color = 0x888888;
+      title = "⌛ **Trade Expired**";
+    }
+
+    const user1 = listingUser;
+    const user2 = offerUser;
+    const car1 = offer.requestedCar;
+    const car2 = offer.offeredCar;
+    const { emoji: emoji1, rarity: rarity1 } = getCarEmbedVisuals(car1.name);
+    const { emoji: emoji2, rarity: rarity2 } = getCarEmbedVisuals(car2.name);
+
+    const embed = new EmbedBuilder()
+      .setColor(color)
+      .setTitle(title)
+      .setDescription(
+        `**${user1.username}** traded:\n` +
+        `${emoji1} **${car1.name}** (#${car1.serial}) [${rarity1}]\n\n` +
+        `with **${user2.username}** for:\n` +
+        `${emoji2} **${car2.name}** (#${car2.serial}) [${rarity2}]`
+      )
+      .setTimestamp();
+
+    const channel = await client.channels.fetch(TRADE_HISTORY_CHANNEL_ID);
+    await channel.send({ embeds: [embed] });
+  } catch (e) {
+    log && log("Failed to log trade history: " + e);
   }
-
-  const user1 = listingUser;
-  const user2 = offerUser;
-  const car1 = offer.requestedCar;
-  const car2 = offer.offeredCar;
-  const { emoji: emoji1, rarity: rarity1 } = getCarEmbedVisuals(car1.name);
-  const { emoji: emoji2, rarity: rarity2 } = getCarEmbedVisuals(car2.name);
-
-  const embed = new EmbedBuilder()
-    .setColor(color)
-    .setTitle(title)
-    .setDescription(
-      `**${user1.username}** traded:\n` +
-      `${emoji1} **${car1.name}** (#${car1.serial}) [${rarity1}]\n\n` +
-      `with **${user2.username}** for:\n` +
-      `${emoji2} **${car2.name}** (#${car2.serial}) [${rarity2}]`
-    )
-    .setTimestamp();
-
-  const channel = await client.channels.fetch(TRADE_HISTORY_CHANNEL_ID);
-  await channel.send({ embeds: [embed] });
 }
 
 // --- /trade command handler ---
@@ -321,7 +302,6 @@ async function handleSendOfferButton(interaction) {
 // --- trade offer selection handler ---
 async function handleChooseOfferMenu(interaction, TRADEOFFERS_CHANNEL_ID) {
   if (!TRADEOFFERS_CHANNEL_ID) log && log("TRADEOFFERS_CHANNEL_ID is missing!");
-  const msg = interaction.message;
   const [_, senderId, receiverId, carNameEncoded, serial] = interaction.customId.split(':');
   const carName = decodeURIComponent(carNameEncoded).trim();
   const selected = interaction.values[0];
@@ -376,7 +356,7 @@ async function handleChooseOfferMenu(interaction, TRADEOFFERS_CHANNEL_ID) {
 }
 
 // --- accept/decline/cancel offer handler ---
-async function handleOfferButton(interaction, TRADE_POSTS_CHANNEL_ID, TRADEOFFERS_CHANNEL_ID) {
+async function handleOfferButton(interaction, TRADE_POSTS_CHANNEL_ID, TRADEOFFERS_CHANNEL_ID, TRADE_HISTORY_CHANNEL_ID) {
   if (!TRADE_POSTS_CHANNEL_ID) log && log("TRADE_POSTS_CHANNEL_ID is missing!");
   if (!TRADEOFFERS_CHANNEL_ID) log && log("TRADEOFFERS_CHANNEL_ID is missing!");
 
@@ -410,6 +390,17 @@ async function handleOfferButton(interaction, TRADE_POSTS_CHANNEL_ID, TRADEOFFER
         components: []
       });
     } catch (e) { log && log("Failed to update trade offer message: " + e); }
+    // Also log decline to history
+    if (TRADE_HISTORY_CHANNEL_ID) {
+      await logTradeHistory({
+        client: interaction.client,
+        TRADE_HISTORY_CHANNEL_ID,
+        action: 'declined',
+        offer,
+        listingUser: await interaction.client.users.fetch(offer.toUserId),
+        offerUser: await interaction.client.users.fetch(offer.fromUserId)
+      });
+    }
     return;
   }
 
@@ -426,6 +417,16 @@ async function handleOfferButton(interaction, TRADE_POSTS_CHANNEL_ID, TRADEOFFER
         components: []
       });
     } catch (e) { log && log("Failed to update trade offer message: " + e); }
+    if (TRADE_HISTORY_CHANNEL_ID) {
+      await logTradeHistory({
+        client: interaction.client,
+        TRADE_HISTORY_CHANNEL_ID,
+        action: 'cancelled',
+        offer,
+        listingUser: await interaction.client.users.fetch(offer.toUserId),
+        offerUser: await interaction.client.users.fetch(offer.fromUserId)
+      });
+    }
     return;
   }
 
@@ -488,6 +489,8 @@ async function handleOfferButton(interaction, TRADE_POSTS_CHANNEL_ID, TRADEOFFER
           components: []
         });
       } catch (err) { log && log("Failed to edit trade post: " + err); }
+    } else {
+      log && log('No TradeListing found for completed trade:', offer.requestedCar);
     }
 
     // Remove offer embed
@@ -500,6 +503,22 @@ async function handleOfferButton(interaction, TRADE_POSTS_CHANNEL_ID, TRADEOFFER
         components: []
       });
     } catch (e) { log && log("Failed to update trade offer message: " + e); }
+
+    // Log the accepted trade to trade history
+    if (TRADE_HISTORY_CHANNEL_ID) {
+      try {
+        await logTradeHistory({
+          client: interaction.client,
+          TRADE_HISTORY_CHANNEL_ID,
+          action: 'accepted',
+          offer,
+          listingUser: await interaction.client.users.fetch(offer.toUserId),
+          offerUser: await interaction.client.users.fetch(offer.fromUserId)
+        });
+      } catch (err) {
+        log && log('Failed to log trade history: ' + err);
+      }
+    }
 
     await interaction.update({ content: '✅ Trade completed successfully!', components: [] });
     return;
