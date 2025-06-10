@@ -71,12 +71,19 @@ function getCarEmbedVisuals(carName) {
 
 // Utility: safe reply in error situations
 async function safeReply(interaction, msg, ephemeral = true) {
-  if (!interaction.replied && !interaction.deferred) {
-    await interaction.reply({ content: msg, ephemeral });
-  } else {
-    try {
-      await interaction.editReply({ content: msg });
-    } catch {}
+  try {
+    // Discord.js v14+: use flags: 64 for ephemeral, never use ephemeral: true
+    const options = { content: msg, flags: ephemeral ? 64 : undefined };
+    if (!interaction.replied && !interaction.deferred) {
+      await interaction.reply(options);
+    } else if (interaction.deferred && !interaction.replied) {
+      await interaction.editReply(options);
+    } else {
+      // Already replied, just ignore or log
+      log && log('Attempted to reply to an already acknowledged interaction');
+    }
+  } catch (err) {
+    log && log('safeReply error: ' + err);
   }
 }
 
@@ -488,7 +495,7 @@ async function handleOfferButton(interaction, TRADE_POSTS_CHANNEL_ID, TRADEOFFER
         if (interaction.replied || interaction.deferred)
           await interaction.editReply({ components: [row] });
         else
-          await interaction.reply({ components: [row], ephemeral: false });
+          await interaction.reply({ components: [row], flags: 64 });
         return;
       }
 
