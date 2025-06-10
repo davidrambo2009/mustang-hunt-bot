@@ -20,18 +20,48 @@ function setTradeDependencies(deps) {
   log = deps.log;
 }
 
-// Utility: get car emoji and rarity for trade history and posts
-function getCarRarityInfo(carName) {
-  const carMeta = cars.find(c => c.name === carName);
-  const rarityEmojiMap = {
-    'Common': '⚪', 'Uncommon': '🟢', 'Rare': '🔵',
-    'Epic': '🟣', 'Legendary': '🟠', 'Mythic': '🔴',
-    'Ultra Mythic': '🟪', 'Godly': '🟡', 'LIMITED EVENT': '✨'
+// Helper: emoji, badge, color for rarity
+function getCarEmbedVisuals(carName) {
+  const meta = cars.find(c => c.name === carName);
+  const rarity = meta?.rarity || "Unknown";
+  const rarityBadge = {
+    "Common": "⚪️ COMMON",
+    "Uncommon": "🟢 UNCOMMON",
+    "Rare": "🔵 RARE",
+    "Epic": "🟣 EPIC",
+    "Legendary": "🟠 LEGENDARY",
+    "Mythic": "🔴 MYTHIC",
+    "Ultra Mythic": "🟪 ULTRA MYTHIC",
+    "Godly": "🟡 GODLY",
+    "LIMITED EVENT": "✨ LIMITED EVENT"
+  }[rarity] || "❓ UNKNOWN";
+  const rarityEmoji = {
+    "Common": "⚪️",
+    "Uncommon": "🟢",
+    "Rare": "🔵",
+    "Epic": "🟣",
+    "Legendary": "🟠",
+    "Mythic": "🔴",
+    "Ultra Mythic": "🟪",
+    "Godly": "🟡",
+    "LIMITED EVENT": "✨"
+  }[rarity] || "❓";
+  const colorMap = {
+    "Common": 0xCECECE,
+    "Uncommon": 0x4EFF8E,
+    "Rare": 0x48B0FF,
+    "Epic": 0xB983FF,
+    "Legendary": 0xFFA726,
+    "Mythic": 0xFF5A5A,
+    "Ultra Mythic": 0xB266FF,
+    "Godly": 0xFFD700,
+    "LIMITED EVENT": 0xD726FF
   };
-  if (!carMeta) return { emoji: '🚗', rarity: 'Unknown' };
   return {
-    emoji: rarityEmojiMap[carMeta.rarity] || '🚗',
-    rarity: carMeta.rarity || 'Unknown'
+    rarity,
+    badge: rarityBadge,
+    emoji: rarityEmoji,
+    color: colorMap[rarity] || 0x888888
   };
 }
 
@@ -44,8 +74,8 @@ async function logTradeHistory({
   listingUser,
   offerUser
 }) {
-  const { emoji: reqEmoji, rarity: reqRarity } = getCarRarityInfo(offer.requestedCar.name);
-  const { emoji: offEmoji, rarity: offRarity } = getCarRarityInfo(offer.offeredCar.name);
+  const { emoji: reqEmoji, rarity: reqRarity } = getCarEmbedVisuals(offer.requestedCar.name);
+  const { emoji: offEmoji, rarity: offRarity } = getCarEmbedVisuals(offer.offeredCar.name);
 
   let result;
   if (action === 'accepted') result = '✅ Trade Completed';
@@ -153,17 +183,22 @@ async function handleTradeNoteModal(interaction, TRADE_POSTS_CHANNEL_ID) {
 
   const tradeChannel = await interaction.client.channels.fetch(TRADE_POSTS_CHANNEL_ID);
 
-  // Stylized embed (matches your screenshot)
-  const { emoji, rarity } = getCarRarityInfo(carName);
+  // Stylized embed
+  const { badge, color, emoji } = getCarEmbedVisuals(carName);
 
   const embed = new EmbedBuilder()
+    .setColor(color)
+    .setAuthor({ 
+      name: `${interaction.user.username} is offering:`, 
+      iconURL: interaction.user.displayAvatarURL() 
+    })
+    .setTitle(`${badge}`)
     .setDescription(
-      `👤 **${interaction.user.username} is offering:**\n\n` +
-      `${emoji} **${carName}** (#${serial})\n` +
-      (note ? `📝 ${note}\n` : '') +
-      `⏳ Expires in 3 hours`
+      `**${emoji} ${carName}**  \`#${serial}\`\n` +
+      (note ? `\n📝 ${note}` : '') +
+      `\n⏳ **Expires in 3 hours**`
     )
-    .setColor(0x00AAFF);
+    .setFooter({ text: `Listed by ${interaction.user.username}` });
 
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
@@ -243,10 +278,6 @@ async function handleChooseOfferMenu(interaction, TRADEOFFERS_CHANNEL_ID) {
 
   const parsedSerial = parseInt(serial, 10);
   const parsedOfferedSerial = parseInt(offeredSerial, 10);
-  if (isNaN(parsedSerial) || isNaN(parsedOfferedSerial)) {
-    log(`Invalid serial(s): offeredSerial=${offeredSerial}, requestedSerial=${serial}, customId=${interaction.customId}, selected=${selected}`);
-    return interaction.reply({ content: '❌ Invalid car serial number detected in trade.', flags: 64 });
-  }
 
   await new TradeOffer({
     fromUserId: senderId,
@@ -257,18 +288,18 @@ async function handleChooseOfferMenu(interaction, TRADEOFFERS_CHANNEL_ID) {
   }).save();
 
   const sender = await interaction.client.users.fetch(senderId);
-  const receiver = await interaction.client.users.fetch(receiverId);
-  const { emoji: offerEmoji, rarity: offerRarity } = getCarRarityInfo(offeredName);
-  const { emoji: reqEmoji, rarity: reqRarity } = getCarRarityInfo(carName);
+
+  const { rarity: offerRarity, rarityEmoji: offerEmoji, color: offerColor } = getCarEmbedVisuals(offeredName);
+  const { rarity: reqRarity, rarityEmoji: reqEmoji } = getCarEmbedVisuals(carName);
 
   const tradeOfferEmbed = new EmbedBuilder()
+    .setColor(offerColor)
+    .setTitle("Trade Offer")
     .setDescription(
-      `**Trade Offer**\n\n` +
       `👤 **${sender.username} is offering:**\n` +
       `${offerEmoji} **${offeredName}** (#${parsedOfferedSerial}) [${offerRarity}]\n\n` +
       `**For:** ${reqEmoji} **${carName}** (#${parsedSerial}) [${reqRarity}]`
-    )
-    .setColor(0x00AAFF);
+    );
 
   const offerRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
