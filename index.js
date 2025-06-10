@@ -27,6 +27,7 @@ const client = new Client({
   ]
 });
 
+// CHANNEL IDS
 const DROP_CHANNEL_ID = '1372749024662257664';
 const GARAGE_CHANNEL_ID = '1372749137413668884';
 const TRADE_POSTS_CHANNEL_ID = '1374486602012692581';
@@ -35,6 +36,7 @@ const TRADE_COMMAND_CHANNEL_ID = '1374623379406979134';
 const TRADE_HISTORY_CHANNEL_ID = '1381780373192573019';
 const GUILD_ID = '1370450475400302686';
 
+// MODELS
 const garageSchema = new mongoose.Schema({
   userId: String,
   cars: [{ name: String, serial: Number }]
@@ -63,18 +65,7 @@ const tradeOfferSchema = new mongoose.Schema({
 });
 const TradeOffer = mongoose.model('TradeOffer', tradeOfferSchema);
 
-const rarityColorsLocal = {
-  Common: 0xAAAAAA,
-  Uncommon: 0x00FF00,
-  Rare: 0x0099FF,
-  Epic: 0x8000FF,
-  Legendary: 0xFFA500,
-  Mythic: 0xFF0000,
-  'Ultra Mythic': 0x9900FF,
-  Godly: 0xFFD700,
-  'LIMITED EVENT': 0xD726FF
-};
-
+// CARS DATA
 const cars = [
   { name: '2015 Mustang EcoBoost', rarity: 'Common', rarityLevel: 1 },
   { name: '2018 Mustang GT', rarity: 'Uncommon', rarityLevel: 3 },
@@ -217,6 +208,7 @@ function scheduleNextDrop(channel) {
   }, delay);
 }
 
+// Set trade dependencies
 trade.setTradeDependencies({ Garage, TradeListing, TradeOffer, cars, log });
 
 async function cleanupExpiredTrades() {
@@ -274,51 +266,6 @@ async function cleanupExpiredTradeOffers() {
       useUnifiedTopology: true
     });
     log('✅ Connected to MongoDB');
-    if (process.env.RUN_MIGRATION === 'true') {
-      (async () => {
-        try {
-          const allGarages = await Garage.find();
-          let totalChanged = 0;
-          for (const garage of allGarages) {
-            let changed = false;
-            let newCars = [];
-            for (let i = 0; i < garage.cars.length; i++) {
-              let car = garage.cars[i];
-              if (typeof car === 'string') {
-                newCars.push({ name: car, serial: 1 });
-                changed = true;
-              } else if (!car) {
-                newCars.push({ name: "Unknown Car", serial: 1 });
-                changed = true;
-              } else {
-                let fixedCar = { ...car };
-                if (!fixedCar.name) {
-                  fixedCar.name = "Unknown Car";
-                  changed = true;
-                }
-                if (typeof fixedCar.serial !== 'number') {
-                  fixedCar.serial = 1;
-                  changed = true;
-                }
-                newCars.push(fixedCar);
-              }
-            }
-            if (changed) {
-              garage.cars = newCars;
-              await garage.save();
-              console.log(`Updated garage for user ${garage.userId}`);
-              totalChanged++;
-            }
-          }
-          console.log(`✅ Migration complete! Updated ${totalChanged} garages.`);
-          process.exit(0);
-        } catch (err) {
-          console.error('Migration failed:', err);
-          process.exit(1);
-        }
-      })();
-      return;
-    }
     client.login(process.env.TOKEN);
   } catch (err) {
     log('❌ MongoDB connection error: ' + err);
@@ -383,7 +330,6 @@ client.on('interactionCreate', async (interaction) => {
           )
           .setFooter({ text: 'Tip: Use /trade only in the trade-commands channel; listings appear in #trade-posts.' })
           .setColor(0x00BFFF);
-
         return interaction.reply({ embeds: [embed], flags: 64 });
       }
 
@@ -500,6 +446,7 @@ client.on('interactionCreate', async (interaction) => {
       }
     }
 
+    // --- TRADE COMMANDS AND MENUS ---
     if (interaction.isChatInputCommand()) {
       if (interaction.commandName === 'trade') {
         await trade.handleTradeCommand(interaction, TRADE_COMMAND_CHANNEL_ID);
@@ -526,37 +473,20 @@ client.on('interactionCreate', async (interaction) => {
       await trade.handleChooseOfferMenu(interaction, TRADEOFFERS_CHANNEL_ID);
       return;
     }
-    // --- Trade history logging after offer actions ---
     if (interaction.isButton() && (
       interaction.customId.startsWith('acceptOffer:') ||
       interaction.customId.startsWith('declineOffer:') ||
       interaction.customId.startsWith('cancelTradeConfirm:')
     )) {
-      await trade.handleOfferButton(interaction);
-      // --- Trade history logging ---
-      const [action, senderId, receiverId, offerMsgId] = interaction.customId.split(':');
-      const offer = await TradeOffer.findOne({ messageId: offerMsgId });
-      if (offer && offer.status !== 'pending') {
-        const listingUser = await client.users.fetch(offer.toUserId);
-        const offerUser = await client.users.fetch(offer.fromUserId);
-        let logAction = '';
-        if (offer.status === 'accepted') logAction = 'accepted';
-        else if (offer.status === 'declined') logAction = 'declined';
-        else if (offer.status === 'expired') logAction = 'expired';
-        else if (action === 'cancelTradeConfirm') logAction = 'cancelled';
-        if (logAction) {
-          await trade.logTradeHistory({
-            client,
-            TRADE_HISTORY_CHANNEL_ID,
-            action: logAction,
-            offer,
-            listingUser,
-            offerUser,
-          });
-        }
-      }
+      await trade.handleOfferButton(
+        interaction,
+        TRADE_POSTS_CHANNEL_ID,
+        TRADEOFFERS_CHANNEL_ID,
+        TRADE_HISTORY_CHANNEL_ID
+      );
       return;
     }
+    // --- GARAGE PAGINATION ---
     if (interaction.isButton() && interaction.customId.startsWith('garage:')) {
       try {
         const [, garageOwnerId, pageIndexStr] = interaction.customId.split(':');
