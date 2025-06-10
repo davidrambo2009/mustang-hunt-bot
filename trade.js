@@ -24,8 +24,8 @@ function setTradeDependencies(deps) {
 function getCarEmbedVisuals(carName) {
   const trimmedName = carName.trim();
   const meta = cars.find(c => c.name.trim() === trimmedName);
-  if (!meta) {
-    log && log(`Car not found in cars array: "${carName}"`);
+  if (!meta && log) {
+    log(`Car not found in cars array: "${carName}"`);
   }
   const rarity = meta?.rarity || "Unknown";
   const badge = {
@@ -158,7 +158,7 @@ async function handleCancelTradeCommand(interaction, TRADE_POSTS_CHANNEL_ID) {
   for (const listing of listings) {
     try {
       const msg = await channel.messages.fetch(listing.messageId);
-      await msg.edit({ components: [] });
+      await msg.edit({ content: '🗑️ This trade listing was cancelled.', embeds: [], components: [] });
     } catch (err) {
       log && log(`Failed to update listing message: ${err}`);
     }
@@ -231,7 +231,8 @@ async function handleTradeNoteModal(interaction, TRADE_POSTS_CHANNEL_ID) {
     userId,
     car: { name: carName, serial: parseInt(serial) },
     note,
-    messageId: msg.id
+    messageId: msg.id,
+    active: true
   }).save();
 
   setTimeout(async () => {
@@ -239,7 +240,11 @@ async function handleTradeNoteModal(interaction, TRADE_POSTS_CHANNEL_ID) {
     try {
       const channel = await interaction.client.channels.fetch(TRADE_POSTS_CHANNEL_ID);
       const msgToEdit = await channel.messages.fetch(newListing.messageId);
-      await msgToEdit.edit({ content: '❌ Trade listing expired.', embeds: [] });
+      await msgToEdit.edit({
+        content: '⌛ This trade listing expired.',
+        embeds: [],
+        components: []
+      });
     } catch (e) {}
   }, 3 * 60 * 60 * 1000);
 
@@ -296,12 +301,13 @@ async function handleChooseOfferMenu(interaction, TRADEOFFERS_CHANNEL_ID) {
   const parsedSerial = parseInt(serial, 10);
   const parsedOfferedSerial = parseInt(offeredSerial, 10);
 
-  await new TradeOffer({
+  const newOffer = await new TradeOffer({
     fromUserId: senderId,
     toUserId: receiverId,
     offeredCar: { name: offeredName, serial: parsedOfferedSerial },
     requestedCar: { name: carName, serial: parsedSerial },
-    messageId: msg.id
+    messageId: null,
+    status: 'pending'
   }).save();
 
   const sender = await interaction.client.users.fetch(senderId);
@@ -320,29 +326,33 @@ async function handleChooseOfferMenu(interaction, TRADEOFFERS_CHANNEL_ID) {
 
   const offerRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId(`acceptOffer:${senderId}:${receiverId}:${msg.id}`)
+      .setCustomId(`acceptOffer:${senderId}:${receiverId}:${newOffer._id}`)
       .setLabel('✅ Accept')
       .setStyle(ButtonStyle.Success),
     new ButtonBuilder()
-      .setCustomId(`declineOffer:${senderId}:${receiverId}:${msg.id}`)
+      .setCustomId(`declineOffer:${senderId}:${receiverId}:${newOffer._id}`)
       .setLabel('❌ Decline')
       .setStyle(ButtonStyle.Danger)
   );
 
   const tradeOffersChannel = await interaction.client.channels.fetch(TRADEOFFERS_CHANNEL_ID);
-  await tradeOffersChannel.send({ embeds: [tradeOfferEmbed], components: [offerRow] });
+  const offerMsg = await tradeOffersChannel.send({ embeds: [tradeOfferEmbed], components: [offerRow] });
+
+  // Save messageId to offer
+  newOffer.messageId = offerMsg.id;
+  await newOffer.save();
 
   await interaction.reply({ content: '✅ Trade offer sent!', flags: 64 });
 }
 
 // --- accept/decline/cancel offer handler ---
-async function handleOfferButton(interaction) {
+async function handleOfferButton(interaction, TRADE_POSTS_CHANNEL_ID, TRADEOFFERS_CHANNEL_ID) {
   const parts = interaction.customId.split(':');
   const action = parts[0];
-  const [ , senderId, receiverId, offerMsgId, confirmFlag ] = parts;
+  const [ , senderId, receiverId, offerId, confirmFlag ] = parts;
 
   // --- Always fetch the offer from DB to get the correct toUserId (listing owner) ---
-  const offer = await TradeOffer.findOne({ messageId: offerMsgId });
+  const offer = await TradeOffer.findById(offerId);
   if (!offer) {
     return interaction.reply({ content: '❌ Offer not found or already handled.', flags: 64 });
   }
@@ -355,14 +365,34 @@ async function handleOfferButton(interaction) {
 
   // Decline
   if (action === 'declineOffer') {
-    await TradeOffer.updateOne({ messageId: offerMsgId }, { status: 'declined' });
+    await TradeOffer.findByIdAndUpdate(offerId, { status: 'declined' });
     await interaction.update({ content: '❌ Trade declined.', components: [] });
+    // Remove offer embed
+    try {
+      const tradeOffersChannel = await interaction.client.channels.fetch(TRADEOFFERS_CHANNEL_ID);
+      const offerMsg = await tradeOffersChannel.messages.fetch(offer.messageId);
+      await offerMsg.edit({
+        content: '❌ This trade offer was declined.',
+        embeds: [],
+        components: []
+      });
+    } catch (e) { log && log("Failed to update trade offer message: " + e); }
     return;
   }
 
   // Cancel Confirm
   if (action === 'cancelTradeConfirm') {
     await interaction.update({ content: '❌ Trade was not accepted.', components: [] });
+    // Remove offer embed
+    try {
+      const tradeOffersChannel = await interaction.client.channels.fetch(TRADEOFFERS_CHANNEL_ID);
+      const offerMsg = await tradeOffersChannel.messages.fetch(offer.messageId);
+      await offerMsg.edit({
+        content: '🗑️ This trade offer is no longer active.',
+        embeds: [],
+        components: []
+      });
+    } catch (e) { log && log("Failed to update trade offer message: " + e); }
     return;
   }
 
@@ -372,11 +402,11 @@ async function handleOfferButton(interaction) {
     if (confirmFlag !== 'confirmed') {
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-          .setCustomId(`acceptOffer:${senderId}:${receiverId}:${offerMsgId}:confirmed`)
+          .setCustomId(`acceptOffer:${senderId}:${receiverId}:${offerId}:confirmed`)
           .setLabel('✅ Yes, confirm trade')
           .setStyle(ButtonStyle.Success),
         new ButtonBuilder()
-          .setCustomId(`cancelTradeConfirm:${senderId}:${receiverId}:${offerMsgId}`)
+          .setCustomId(`cancelTradeConfirm:${senderId}:${receiverId}:${offerId}`)
           .setLabel('❌ Cancel')
           .setStyle(ButtonStyle.Danger)
       );
@@ -390,7 +420,7 @@ async function handleOfferButton(interaction) {
 
     // Actual trade logic, only runs on confirm!
     const offerUpdate = await TradeOffer.findOneAndUpdate(
-      { messageId: offerMsgId, status: 'pending' },
+      { _id: offerId, status: 'pending' },
       { status: 'accepted' }
     );
     if (!offerUpdate) {
@@ -410,6 +440,33 @@ async function handleOfferButton(interaction) {
     toGarage.cars.push(offer.offeredCar);
     await fromGarage.save();
     await toGarage.save();
+
+    // Mark the listing inactive and update the trade post
+    const listing = await TradeListing.findOne({ 'car.name': offer.requestedCar.name, 'car.serial': offer.requestedCar.serial, active: true });
+    if (listing) {
+      listing.active = false;
+      await listing.save();
+      try {
+        const tradePostsChannel = await interaction.client.channels.fetch(TRADE_POSTS_CHANNEL_ID);
+        const listingMsg = await tradePostsChannel.messages.fetch(listing.messageId);
+        await listingMsg.edit({
+          content: '✅ This trade has been completed and is no longer available.',
+          embeds: [],
+          components: []
+        });
+      } catch (err) { log && log("Failed to edit trade post: " + err); }
+    }
+
+    // Remove offer embed
+    try {
+      const tradeOffersChannel = await interaction.client.channels.fetch(TRADEOFFERS_CHANNEL_ID);
+      const offerMsg = await tradeOffersChannel.messages.fetch(offer.messageId);
+      await offerMsg.edit({
+        content: '✅ This trade offer has been accepted and is no longer available.',
+        embeds: [],
+        components: []
+      });
+    } catch (e) { log && log("Failed to update trade offer message: " + e); }
 
     await interaction.update({ content: '✅ Trade completed successfully!', components: [] });
     return;
