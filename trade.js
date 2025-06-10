@@ -1,3 +1,30 @@
+/**
+ * NOTE: For this file to work correctly, you MUST always call these handlers with the correct channel IDs:
+ *   - handleOfferButton(interaction, TRADE_POSTS_CHANNEL_ID, TRADEOFFERS_CHANNEL_ID)
+ *   - handleChooseOfferMenu(interaction, TRADEOFFERS_CHANNEL_ID)
+ *   - handleTradeNoteModal(interaction, TRADE_POSTS_CHANNEL_ID)
+ *   - handleCancelTradeCommand(interaction, TRADE_POSTS_CHANNEL_ID)
+ * 
+ * Example usage in your main bot file:
+ * 
+ * const TRADE_POSTS_CHANNEL_ID = '1374486602012692581';
+ * const TRADEOFFERS_CHANNEL_ID = '1374486704387264512';
+ * 
+ * // In your interaction handler:
+ * if (interaction.isButton() && (interaction.customId.startsWith('acceptOffer') || interaction.customId.startsWith('declineOffer') || interaction.customId.startsWith('cancelTradeConfirm'))) {
+ *   await handleOfferButton(interaction, TRADE_POSTS_CHANNEL_ID, TRADEOFFERS_CHANNEL_ID);
+ * }
+ * if (interaction.isSelectMenu() && interaction.customId.startsWith('chooseOffer')) {
+ *   await handleChooseOfferMenu(interaction, TRADEOFFERS_CHANNEL_ID);
+ * }
+ * if (interaction.isModalSubmit() && interaction.customId.startsWith('tradeNoteModal')) {
+ *   await handleTradeNoteModal(interaction, TRADE_POSTS_CHANNEL_ID);
+ * }
+ * if (interaction.isChatInputCommand() && interaction.commandName === 'canceltrade') {
+ *   await handleCancelTradeCommand(interaction, TRADE_POSTS_CHANNEL_ID);
+ * }
+ */
+
 const {
   EmbedBuilder,
   ActionRowBuilder,
@@ -150,6 +177,7 @@ async function handleTradeCommand(interaction, TRADE_COMMAND_CHANNEL_ID) {
 
 // --- /canceltrade command handler ---
 async function handleCancelTradeCommand(interaction, TRADE_POSTS_CHANNEL_ID) {
+  if (!TRADE_POSTS_CHANNEL_ID) log && log("TRADE_POSTS_CHANNEL_ID is missing!");
   const userId = interaction.user.id;
   const listings = await TradeListing.find({ userId, active: true });
   if (!listings.length) return interaction.reply({ content: '🚫 No active listings found.', flags: 64 });
@@ -193,6 +221,7 @@ async function handleTradeSelectMenu(interaction) {
 
 // --- modal submit handler for trade note ---
 async function handleTradeNoteModal(interaction, TRADE_POSTS_CHANNEL_ID) {
+  if (!TRADE_POSTS_CHANNEL_ID) log && log("TRADE_POSTS_CHANNEL_ID is missing!");
   const [carNameEncoded, serial] = interaction.customId.replace('tradeNoteModal:', '').split('#');
   const carName = decodeURIComponent(carNameEncoded).trim();
   const note = interaction.fields.getTextInputValue('tradeNote') || '';
@@ -291,6 +320,7 @@ async function handleSendOfferButton(interaction) {
 
 // --- trade offer selection handler ---
 async function handleChooseOfferMenu(interaction, TRADEOFFERS_CHANNEL_ID) {
+  if (!TRADEOFFERS_CHANNEL_ID) log && log("TRADEOFFERS_CHANNEL_ID is missing!");
   const msg = interaction.message;
   const [_, senderId, receiverId, carNameEncoded, serial] = interaction.customId.split(':');
   const carName = decodeURIComponent(carNameEncoded).trim();
@@ -347,6 +377,9 @@ async function handleChooseOfferMenu(interaction, TRADEOFFERS_CHANNEL_ID) {
 
 // --- accept/decline/cancel offer handler ---
 async function handleOfferButton(interaction, TRADE_POSTS_CHANNEL_ID, TRADEOFFERS_CHANNEL_ID) {
+  if (!TRADE_POSTS_CHANNEL_ID) log && log("TRADE_POSTS_CHANNEL_ID is missing!");
+  if (!TRADEOFFERS_CHANNEL_ID) log && log("TRADEOFFERS_CHANNEL_ID is missing!");
+
   const parts = interaction.customId.split(':');
   const action = parts[0];
   const [ , senderId, receiverId, offerId, confirmFlag ] = parts;
