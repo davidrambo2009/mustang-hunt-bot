@@ -289,8 +289,8 @@ async function handleChooseOfferMenu(interaction, TRADEOFFERS_CHANNEL_ID) {
 
   const sender = await interaction.client.users.fetch(senderId);
 
-  const { rarity: offerRarity, rarityEmoji: offerEmoji, color: offerColor } = getCarEmbedVisuals(offeredName);
-  const { rarity: reqRarity, rarityEmoji: reqEmoji } = getCarEmbedVisuals(carName);
+  const { rarity: offerRarity, emoji: offerEmoji, color: offerColor } = getCarEmbedVisuals(offeredName);
+const { rarity: reqRarity, emoji: reqEmoji } = getCarEmbedVisuals(carName);
 
   const tradeOfferEmbed = new EmbedBuilder()
     .setColor(offerColor)
