@@ -72,14 +72,13 @@ function getCarEmbedVisuals(carName) {
 // Utility: safe reply in error situations (flags: 64 makes ephemeral)
 async function safeReply(interaction, msg) {
   try {
-    // Discord.js v14+: use flags: 64 for ephemeral, never use ephemeral: true
-    const options = { content: msg, flags: 64 };
     if (!interaction.replied && !interaction.deferred) {
-      await interaction.reply(options);
+      await interaction.reply({ content: msg, flags: 64 });
     } else if (interaction.deferred && !interaction.replied) {
-      await interaction.editReply(options);
+      await interaction.editReply({ content: msg });
     } else {
-      log && log('Attempted to reply to an already acknowledged interaction');
+      // Already replied, just log
+      log && log('safeReply: interaction already acknowledged, skipping');
     }
   } catch (err) {
     log && log('safeReply error: ' + err);
@@ -190,6 +189,10 @@ async function handleCancelTradeCommand(interaction, TRADE_POSTS_CHANNEL_ID) {
         await msg.edit({ content: '🗑️ This trade listing was cancelled.', embeds: [], components: [] });
       } catch (err) {
         log && log(`Failed to update listing message: ${err}`);
+        if (err.code === 10008) {
+          await TradeListing.findByIdAndDelete(listing._id);
+          log && log("Deleted TradeListing because message no longer exists.");
+        }
       }
       await TradeListing.findByIdAndUpdate(listing._id, { active: false });
     }
@@ -285,7 +288,12 @@ async function handleTradeNoteModal(interaction, TRADE_POSTS_CHANNEL_ID) {
           embeds: [],
           components: []
         });
-      } catch (e) { }
+      } catch (e) {
+        if (e.code === 10008) {
+          await TradeListing.findByIdAndDelete(newListing._id);
+          log && log("Deleted TradeListing because message no longer exists (on expire).");
+        }
+      }
     }, 3 * 60 * 60 * 1000);
 
     await interaction.reply({ content: `✅ Trade listing posted to <#${TRADE_POSTS_CHANNEL_ID}>!`, flags: 64 });
@@ -526,7 +534,7 @@ async function handleOfferButton(interaction, TRADE_POSTS_CHANNEL_ID, TRADEOFFER
         listing.active = false;
         await listing.save();
         try {
-          log && log(`Trying to update trade post: Channel: ${TRADE_POSTS_CHANNEL_ID}, Msg: ${listing?.messageId}`);
+          log && log(`Trying to update trade post. Channel: ${TRADE_POSTS_CHANNEL_ID}, Msg: ${listing?.messageId}`);
           const tradePostsChannel = await interaction.client.channels.fetch(TRADE_POSTS_CHANNEL_ID);
           try {
             const listingMsg = await tradePostsChannel.messages.fetch(listing.messageId);
@@ -535,9 +543,9 @@ async function handleOfferButton(interaction, TRADE_POSTS_CHANNEL_ID, TRADEOFFER
               embeds: [],
               components: []
             });
+            log && log('Trade post message edited.');
           } catch (err) {
             if (err.code === 10008) {
-              // Unknown Message: delete the listing to clean up
               await TradeListing.findByIdAndDelete(listing._id);
               log && log("Deleted TradeListing because message no longer exists.");
             } else {
