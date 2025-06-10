@@ -378,7 +378,9 @@ client.on('interactionCreate', async (interaction) => {
           await interaction.reply({ content: '✅ You claimed the car!', flags: 64 });
         } catch (error) {
           log(`DB ERROR in /claim: ${error}`);
-          await interaction.reply({ content: '❌ An error occurred. Please try again later.', flags: 64 });
+          if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ content: '❌ An error occurred. Please try again later.', flags: 64 });
+          }
         } finally {
           claimingUsers.delete(userId);
         }
@@ -392,7 +394,9 @@ client.on('interactionCreate', async (interaction) => {
           return interaction.reply({ content: '🚗 Car dropped.', flags: 64 });
         } catch (error) {
           log(`ERROR in /drop: ${error}`);
-          return interaction.reply({ content: '❌ An error occurred dropping the car.', flags: 64 });
+          if (!interaction.replied && !interaction.deferred) {
+            return interaction.reply({ content: '❌ An error occurred dropping the car.', flags: 64 });
+          }
         }
       }
 
@@ -410,7 +414,9 @@ client.on('interactionCreate', async (interaction) => {
           await interaction.reply({ embeds: [embed], components, flags: 64 });
         } catch (error) {
           log(`DB ERROR in /garage: ${error}`);
-          await interaction.reply({ content: '❌ An error occurred. Please try again later.', flags: 64 });
+          if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ content: '❌ An error occurred. Please try again later.', flags: 64 });
+          }
         }
         return;
       }
@@ -423,7 +429,9 @@ client.on('interactionCreate', async (interaction) => {
           return interaction.reply({ content: `♻️ Reset ${target.username}'s garage.`, flags: 64 });
         } catch (error) {
           log(`DB ERROR in /resetgarage: ${error}`);
-          return interaction.reply({ content: '❌ An error occurred. Please try again later.', flags: 64 });
+          if (!interaction.replied && !interaction.deferred) {
+            return interaction.reply({ content: '❌ An error occurred. Please try again later.', flags: 64 });
+          }
         }
       }
 
@@ -440,7 +448,9 @@ client.on('interactionCreate', async (interaction) => {
 • ⏱️ Uptime: **${h}h ${m}m ${s}s**`, flags: 64 });
         } catch (error) {
           log(`DB ERROR in /stats: ${error}`);
-          await interaction.reply({ content: '❌ An error occurred. Please try again later.', flags: 64 });
+          if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ content: '❌ An error occurred. Please try again later.', flags: 64 });
+          }
         }
         return;
       }
