@@ -69,17 +69,16 @@ function getCarEmbedVisuals(carName) {
   };
 }
 
-// Utility: safe reply in error situations
-async function safeReply(interaction, msg, ephemeral = true) {
+// Utility: safe reply in error situations (flags: 64 makes ephemeral)
+async function safeReply(interaction, msg) {
   try {
     // Discord.js v14+: use flags: 64 for ephemeral, never use ephemeral: true
-    const options = { content: msg, flags: ephemeral ? 64 : undefined };
+    const options = { content: msg, flags: 64 };
     if (!interaction.replied && !interaction.deferred) {
       await interaction.reply(options);
     } else if (interaction.deferred && !interaction.replied) {
       await interaction.editReply(options);
     } else {
-      // Already replied, just ignore or log
       log && log('Attempted to reply to an already acknowledged interaction');
     }
   } catch (err) {
@@ -489,8 +488,7 @@ async function handleOfferButton(interaction, TRADE_POSTS_CHANNEL_ID, TRADEOFFER
         );
         await safeReply(
           interaction,
-          'Are you sure you want to accept this trade?\nThis action is **final** and will swap the cars between users.',
-          false
+          'Are you sure you want to accept this trade?\nThis action is **final** and will swap the cars between users.'
         );
         if (interaction.replied || interaction.deferred)
           await interaction.editReply({ components: [row] });
@@ -530,14 +528,24 @@ async function handleOfferButton(interaction, TRADE_POSTS_CHANNEL_ID, TRADEOFFER
         try {
           log && log(`Trying to update trade post: Channel: ${TRADE_POSTS_CHANNEL_ID}, Msg: ${listing?.messageId}`);
           const tradePostsChannel = await interaction.client.channels.fetch(TRADE_POSTS_CHANNEL_ID);
-          const listingMsg = await tradePostsChannel.messages.fetch(listing.messageId);
-          await listingMsg.edit({
-            content: '✅ This trade has been completed and is no longer available.',
-            embeds: [],
-            components: []
-          });
+          try {
+            const listingMsg = await tradePostsChannel.messages.fetch(listing.messageId);
+            await listingMsg.edit({
+              content: '✅ This trade has been completed and is no longer available.',
+              embeds: [],
+              components: []
+            });
+          } catch (err) {
+            if (err.code === 10008) {
+              // Unknown Message: delete the listing to clean up
+              await TradeListing.findByIdAndDelete(listing._id);
+              log && log("Deleted TradeListing because message no longer exists.");
+            } else {
+              log && log("Failed to edit trade post: " + err);
+            }
+          }
         } catch (err) {
-          log && log("Failed to edit trade post: " + err);
+          log && log("Failed to fetch trade post channel: " + err);
         }
       } else {
         log && log('No TradeListing found for completed trade:', offer.requestedCar);
