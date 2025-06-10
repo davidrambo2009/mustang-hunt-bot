@@ -20,18 +20,17 @@ function setTradeDependencies(deps) {
   log = deps.log;
 }
 
-// Utility: get car emoji and rarity for trade history
+// Utility: get car emoji and rarity for trade history and posts
 function getCarRarityInfo(carName) {
   const carMeta = cars.find(c => c.name === carName);
-  // You can customize emoji per rarity here
   const rarityEmojiMap = {
     'Common': '⚪', 'Uncommon': '🟢', 'Rare': '🔵',
     'Epic': '🟣', 'Legendary': '🟠', 'Mythic': '🔴',
     'Ultra Mythic': '🟪', 'Godly': '🟡', 'LIMITED EVENT': '✨'
   };
-  if (!carMeta) return { emoji: '', rarity: 'Unknown' };
+  if (!carMeta) return { emoji: '🚗', rarity: 'Unknown' };
   return {
-    emoji: rarityEmojiMap[carMeta.rarity] || '',
+    emoji: rarityEmojiMap[carMeta.rarity] || '🚗',
     rarity: carMeta.rarity || 'Unknown'
   };
 }
@@ -153,9 +152,17 @@ async function handleTradeNoteModal(interaction, TRADE_POSTS_CHANNEL_ID) {
   const userId = interaction.user.id;
 
   const tradeChannel = await interaction.client.channels.fetch(TRADE_POSTS_CHANNEL_ID);
+
+  // Stylized embed (matches your screenshot)
+  const { emoji, rarity } = getCarRarityInfo(carName);
+
   const embed = new EmbedBuilder()
-    .setTitle(`👤 ${interaction.user.username} is offering:`)
-    .setDescription(`🚗 **${carName}** (#${serial})\n📝 ${note || 'No message'}\n⏳ Expires in 3 hours`)
+    .setDescription(
+      `👤 **${interaction.user.username} is offering:**\n\n` +
+      `${emoji} **${carName}** (#${serial})\n` +
+      (note ? `📝 ${note}\n` : '') +
+      `⏳ Expires in 3 hours`
+    )
     .setColor(0x00AAFF);
 
   const row = new ActionRowBuilder().addComponents(
@@ -251,13 +258,15 @@ async function handleChooseOfferMenu(interaction, TRADEOFFERS_CHANNEL_ID) {
 
   const sender = await interaction.client.users.fetch(senderId);
   const receiver = await interaction.client.users.fetch(receiverId);
+  const { emoji: offerEmoji, rarity: offerRarity } = getCarRarityInfo(offeredName);
+  const { emoji: reqEmoji, rarity: reqRarity } = getCarRarityInfo(carName);
 
   const tradeOfferEmbed = new EmbedBuilder()
-    .setTitle('Trade Offer')
     .setDescription(
-      `👤 **${sender.username}** is offering:\n` +
-      `🚗 **${offeredName}** (#${parsedOfferedSerial})\n\n` +
-      `For: **${carName}** (#${parsedSerial})`
+      `**Trade Offer**\n\n` +
+      `👤 **${sender.username} is offering:**\n` +
+      `${offerEmoji} **${offeredName}** (#${parsedOfferedSerial}) [${offerRarity}]\n\n` +
+      `**For:** ${reqEmoji} **${carName}** (#${parsedSerial}) [${reqRarity}]`
     )
     .setColor(0x00AAFF);
 
