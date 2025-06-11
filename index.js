@@ -313,6 +313,20 @@ client.once('ready', async () => {
 });
 
 client.on('interactionCreate', async (interaction) => {
+  // LOGGING BLOCK - Add this at the top!
+  if (interaction.isStringSelectMenu()) {
+    try {
+      const options = interaction.component.options || [];
+      for (const opt of options) {
+        if (opt.value.length < 6) {
+          console.log('[DEBUG] Short select menu option detected:', opt, 'CustomId:', interaction.customId);
+        }
+      }
+    } catch (e) {
+      console.log('[DEBUG] Error inspecting select menu:', e);
+    }
+  }
+
   try {
     if (interaction.isChatInputCommand()) {
       const { commandName, user, channel, options, member } = interaction;
