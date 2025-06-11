@@ -352,18 +352,19 @@ client.once('ready', async () => {
 });
 
 client.on('interactionCreate', async (interaction) => {
-  if (interaction.isStringSelectMenu()) {
-    try {
-      const options = interaction.component.options || [];
-      for (const opt of options) {
-        if (opt.value.length < 6) {
-          console.log('[DEBUG] Short select menu option detected:', opt, 'CustomId:', interaction.customId);
-        }
-      }
-    } catch (e) {
-      console.log('[DEBUG] Error inspecting select menu:', e);
-    }
-  }
+  // --- REMOVE DEBUG SPAM ---
+  // if (interaction.isStringSelectMenu()) {
+  //   try {
+  //     const options = interaction.component.options || [];
+  //     for (const opt of options) {
+  //       if (opt.value.length < 6) {
+  //         console.log('[DEBUG] Short select menu option detected:', opt, 'CustomId:', interaction.customId);
+  //       }
+  //     }
+  //   } catch (e) {
+  //     console.log('[DEBUG] Error inspecting select menu:', e);
+  //   }
+  // }
 
   try {
     if (interaction.isChatInputCommand()) {
@@ -470,6 +471,7 @@ client.on('interactionCreate', async (interaction) => {
           await interaction.reply({ embeds: [embed], components, flags: 64 });
         } catch (error) {
           log(`DB ERROR in /garage: ${error}`);
+          // Only reply if not already replied/deferred!
           if (!interaction.replied && !interaction.deferred) {
             await interaction.reply({ content: '❌ An error occurred. Please try again later.', flags: 64 });
           }
