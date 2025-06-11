@@ -115,15 +115,9 @@ async function logTradeHistory({
     const user1 = listingUser;
     const user2 = offerUser;
     const car1 = offer.requestedCar;
-    const offeredCars = offer.offeredCars || [offer.offeredCar || offer.offeredCars]; // fallback for single car
-
+    const car2 = offer.offeredCar;
     const { emoji: emoji1, rarity: rarity1 } = getCarEmbedVisuals(car1.name);
-
-    let offeredCarsDesc = '';
-    for (const car2 of offeredCars) {
-      const { emoji: emoji2, rarity: rarity2 } = getCarEmbedVisuals(car2.name);
-      offeredCarsDesc += `${emoji2} **${car2.name}** (#${car2.serial}) [${rarity2}]\n`;
-    }
+    const { emoji: emoji2, rarity: rarity2 } = getCarEmbedVisuals(car2.name);
 
     const embed = new EmbedBuilder()
       .setColor(color)
@@ -132,7 +126,7 @@ async function logTradeHistory({
         `**${user1.username}** traded:\n` +
         `${emoji1} **${car1.name}** (#${car1.serial}) [${rarity1}]\n\n` +
         `with **${user2.username}** for:\n` +
-        offeredCarsDesc
+        `${emoji2} **${car2.name}** (#${car2.serial}) [${rarity2}]`
       )
       .setTimestamp();
 
@@ -157,8 +151,7 @@ async function handleTradeCommand(interaction, TRADE_COMMAND_CHANNEL_ID) {
     const uniqueChoices = new Set();
     const carChoices = [];
     for (const c of garage.cars) {
-      // Prefix to guarantee value is always 6+ chars
-      const value = `car-${encodeURIComponent(c.name)}#${c.serial}`;
+      const value = `${encodeURIComponent(c.name)}#${c.serial}`;
       if (!uniqueChoices.has(value)) {
         uniqueChoices.add(value);
         carChoices.push({
@@ -214,11 +207,7 @@ async function handleCancelTradeCommand(interaction, TRADE_POSTS_CHANNEL_ID) {
 async function handleTradeSelectMenu(interaction) {
   try {
     const [_, userId] = interaction.customId.split(':');
-    // PATCH: decode/prefix strip
-    let [carNameEncodedWithPrefix, serial] = interaction.values[0].split('#');
-    let carNameEncoded = carNameEncodedWithPrefix.startsWith('car-')
-      ? carNameEncodedWithPrefix.slice(4)
-      : carNameEncodedWithPrefix;
+    const [carNameEncoded, serial] = interaction.values[0].split('#');
     const carName = decodeURIComponent(carNameEncoded).trim();
 
     // Show a modal to collect the note
@@ -247,11 +236,7 @@ async function handleTradeSelectMenu(interaction) {
 async function handleTradeNoteModal(interaction, TRADE_POSTS_CHANNEL_ID) {
   try {
     if (!TRADE_POSTS_CHANNEL_ID) log && log("TRADE_POSTS_CHANNEL_ID is missing!");
-    // Fix: Always parse and strip prefix from modal customId!
-    let [carNameEncodedWithPrefix, serial] = interaction.customId.replace('tradeNoteModal:', '').split('#');
-    let carNameEncoded = carNameEncodedWithPrefix.startsWith('car-')
-      ? carNameEncodedWithPrefix.slice(4)
-      : carNameEncodedWithPrefix;
+    const [carNameEncoded, serial] = interaction.customId.replace('tradeNoteModal:', '').split('#');
     const carName = decodeURIComponent(carNameEncoded).trim();
     const note = interaction.fields.getTextInputValue('tradeNote') || '';
     const userId = interaction.user.id;
@@ -336,8 +321,7 @@ async function handleSendOfferButton(interaction) {
     const uniqueChoices = new Set();
     const carChoices = [];
     for (const c of fromGarage.cars) {
-      // Prefix to guarantee value is always 6+ chars
-      const value = `car-${encodeURIComponent(c.name)}#${c.serial}`;
+      const value = `${encodeURIComponent(c.name)}#${c.serial}`;
       if (!uniqueChoices.has(value)) {
         uniqueChoices.add(value);
         carChoices.push({
@@ -351,13 +335,11 @@ async function handleSendOfferButton(interaction) {
     const row = new ActionRowBuilder().addComponents(
       new StringSelectMenuBuilder()
         .setCustomId(`chooseOffer:${interaction.user.id}:${listingOwnerId}:${encodeURIComponent(carName)}:${serial}`)
-        .setPlaceholder('Select up to 6 cars to offer')
+        .setPlaceholder('Select a car to offer')
         .addOptions(limitedCarChoices)
-        .setMinValues(1)
-        .setMaxValues(6)
     );
 
-    return interaction.reply({ content: 'Select up to 6 cars to offer in trade:', components: [row], flags: 64 });
+    return interaction.reply({ content: 'Select a car to offer in trade:', components: [row], flags: 64 });
   } catch (error) {
     log && log("Error in handleSendOfferButton: " + error);
     await safeReply(interaction, '❌ An error occurred.');
@@ -370,60 +352,35 @@ async function handleChooseOfferMenu(interaction, TRADEOFFERS_CHANNEL_ID) {
     if (!TRADEOFFERS_CHANNEL_ID) log && log("TRADEOFFERS_CHANNEL_ID is missing!");
     const [_, senderId, receiverId, carNameEncoded, serial] = interaction.customId.split(':');
     const carName = decodeURIComponent(carNameEncoded).trim();
-
-    // Get all selected cars (up to 6)
-    const offeredCars = interaction.values.map(selected => {
-      // PATCH: decode/prefix strip
-      const [offeredNameEncodedWithPrefix, offeredSerial] = selected.split('#');
-      const offeredNameEncoded = offeredNameEncodedWithPrefix.startsWith('car-')
-        ? offeredNameEncodedWithPrefix.slice(4)
-        : offeredNameEncodedWithPrefix;
-      return {
-        name: decodeURIComponent(offeredNameEncoded).trim(),
-        serial: parseInt(offeredSerial, 10)
-      };
-    });
+    const selected = interaction.values[0];
+    const [offeredNameEncoded, offeredSerial] = selected.split('#');
+    const offeredName = decodeURIComponent(offeredNameEncoded).trim();
 
     const parsedSerial = parseInt(serial, 10);
+    const parsedOfferedSerial = parseInt(offeredSerial, 10);
 
     const newOffer = await new TradeOffer({
       fromUserId: senderId,
       toUserId: receiverId,
-      offeredCars: offeredCars,
+      offeredCar: { name: offeredName, serial: parsedOfferedSerial },
       requestedCar: { name: carName, serial: parsedSerial },
       messageId: null,
       status: 'pending'
     }).save();
 
     const sender = await interaction.client.users.fetch(senderId);
-    const recipient = await interaction.client.users.fetch(receiverId);
 
-    // Build offered cars description
-    let offeredCarsDesc = '';
-    for (const car of offeredCars) {
-      const { rarity, emoji } = getCarEmbedVisuals(car.name);
-      offeredCarsDesc += `${emoji} **${car.name}** (#${car.serial}) [${rarity}]\n`;
-    }
-    const { rarity: reqRarity, emoji: reqEmoji, color: reqColor } = getCarEmbedVisuals(carName);
+    const { rarity: offerRarity, emoji: offerEmoji, color: offerColor } = getCarEmbedVisuals(offeredName);
+    const { rarity: reqRarity, emoji: reqEmoji } = getCarEmbedVisuals(carName);
 
-    // --- PERSONALIZED EMBED ---
     const tradeOfferEmbed = new EmbedBuilder()
-      .setColor(reqColor)
-      .setAuthor({
-        name: `${sender.username} is offering you a trade!`,
-        iconURL: sender.displayAvatarURL()
-      })
+      .setColor(offerColor)
       .setTitle("Trade Offer")
       .setDescription(
-        `Hey <@${recipient.id}>,\n\n` +
-        `${sender.username} would like to trade with you!\n\n` +
-        `**${sender.username} is offering:**\n${offeredCarsDesc}\n` +
-        `**For your:** ${reqEmoji} **${carName}** (#${parsedSerial}) [${reqRarity}]\n\n` +
-        `*Only you can accept or decline this trade offer!*`
-      )
-      .setFooter({
-        text: `Offer sent to ${recipient.username} • You have 3 hours to respond`
-      });
+        `👤 **${sender.username} is offering:**\n` +
+        `${offerEmoji} **${offeredName}** (#${parsedOfferedSerial}) [${offerRarity}]\n\n` +
+        `**For:** ${reqEmoji} **${carName}** (#${parsedSerial}) [${reqRarity}]`
+      );
 
     const offerRow = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
@@ -560,28 +517,14 @@ async function handleOfferButton(interaction, TRADE_POSTS_CHANNEL_ID, TRADEOFFER
       const fromGarage = await Garage.findOne({ userId: offer.fromUserId });
       const toGarage = await Garage.findOne({ userId: offer.toUserId });
 
-      // Remove all offered cars from sender's garage and add to receiver
-      if (offer.offeredCars && Array.isArray(offer.offeredCars)) {
-        for (const car of offer.offeredCars) {
-          fromGarage.cars = fromGarage.cars.filter(
-            c => !(c.name === car.name && c.serial === car.serial)
-          );
-          toGarage.cars.push(car);
-        }
-      } else if (offer.offeredCar) {
-        // legacy fallback
-        fromGarage.cars = fromGarage.cars.filter(
-          c => !(c.name === offer.offeredCar.name && c.serial === offer.offeredCar.serial)
-        );
-        toGarage.cars.push(offer.offeredCar);
-      }
-
-      // Remove requested car from receiver's garage and add to sender
+      fromGarage.cars = fromGarage.cars.filter(
+        c => !(c.name === offer.offeredCar.name && c.serial === offer.offeredCar.serial)
+      );
       toGarage.cars = toGarage.cars.filter(
         c => !(c.name === offer.requestedCar.name && c.serial === offer.requestedCar.serial)
       );
       fromGarage.cars.push(offer.requestedCar);
-
+      toGarage.cars.push(offer.offeredCar);
       await fromGarage.save();
       await toGarage.save();
 
