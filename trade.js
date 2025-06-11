@@ -1,4 +1,4 @@
-// MAXIMUM DEBUG VERSION FOR TRADE.JS
+// MAXIMUM DEBUG VERSION FOR TRADE.JS WITH FULL COMPONENT LOGGING
 const {
   EmbedBuilder,
   ActionRowBuilder,
@@ -217,6 +217,13 @@ async function handleTradeCommand(interaction, TRADE_COMMAND_CHANNEL_ID) {
         .setPlaceholder('Select a car to list for trade')
         .addOptions(limitedCarChoices)
     );
+
+    // DEBUG: Log full components object
+    console.log(
+      "=== COMPONENTS PASSED TO REPLY (trade command) ===\n",
+      require('util').inspect([row], { depth: 10, colors: true })
+    );
+
     await interaction.reply({ content: 'Select a car from your garage to list for trade:', components: [row], flags: 64 });
   } catch (error) {
     log && log("Error in handleTradeCommand: " + error);
@@ -328,6 +335,12 @@ async function handleTradeNoteModal(interaction, TRADE_POSTS_CHANNEL_ID) {
         .setStyle(ButtonStyle.Primary)
     );
 
+    // Log the full components object
+    console.log(
+      "=== COMPONENTS PASSED TO REPLY (trade note modal) ===\n",
+      require('util').inspect([row], { depth: 10, colors: true })
+    );
+
     const msg = await tradeChannel.send({ embeds: [embed], components: [row] });
 
     // Save listing only ONCE
@@ -424,6 +437,12 @@ async function handleSendOfferButton(interaction) {
         .setMaxValues(6)
     );
 
+    // Log the full components object
+    console.log(
+      "=== COMPONENTS PASSED TO REPLY (send offer) ===\n",
+      require('util').inspect([row], { depth: 10, colors: true })
+    );
+
     return interaction.reply({ content: 'Select up to 6 cars to offer in trade:', components: [row], flags: 64 });
   } catch (error) {
     log && log("Error in handleSendOfferButton: " + error);
@@ -503,6 +522,12 @@ async function handleChooseOfferMenu(interaction, TRADEOFFERS_CHANNEL_ID) {
         .setCustomId(`declineOffer:${senderId}:${receiverId}:${newOffer._id}`)
         .setLabel('❌ Decline')
         .setStyle(ButtonStyle.Danger)
+    );
+
+    // Log the full components object
+    console.log(
+      "=== COMPONENTS PASSED TO REPLY (choose offer) ===\n",
+      require('util').inspect([offerRow], { depth: 10, colors: true })
     );
 
     const tradeOffersChannel = await interaction.client.channels.fetch(TRADEOFFERS_CHANNEL_ID);
@@ -607,6 +632,13 @@ async function handleOfferButton(interaction, TRADE_POSTS_CHANNEL_ID, TRADEOFFER
             .setLabel('❌ Cancel')
             .setStyle(ButtonStyle.Danger)
         );
+
+        // Log the full components object for confirmation row
+        console.log(
+          "=== COMPONENTS PASSED TO REPLY (accept confirm) ===\n",
+          require('util').inspect([row], { depth: 10, colors: true })
+        );
+
         await safeReply(
           interaction,
           'Are you sure you want to accept this trade?\nThis action is **final** and will swap the cars between users.'
