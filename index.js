@@ -3,7 +3,7 @@ require('./keepAlive');
 const fs = require('fs');
 const mongoose = require('mongoose');
 const { dropCar, getRarityEmoji, rarityColors } = require('./dropCar.js');
-const trade = require('./trade.js');
+const trade = require('./trade.js');const rarityColors = {
 const {
   Client, GatewayIntentBits, EmbedBuilder,
   SlashCommandBuilder, PermissionFlagsBits, ActionRowBuilder,
@@ -114,22 +114,6 @@ const cars = [
 ];
 
 // NOTE: If you want to add a "Mythic" car in the future, use rarityLevel 12 or 13 for that tier.
-
-// RARITY COLORS (for the updated garage and drop messages)
-// You may want to update dropCar.js to support "???" and "Mythic"
-const rarityColors = {
-  "Common": 0xffffff,
-  "Uncommon": 0x43e660,
-  "Rare": 0x007bff,
-  "Epic": 0x9d30d8,
-  "Legendary": 0xff8800,
-  "Mythic": 0xff3c3c,
-  "Ultra Mythic": 0x6a00a3,
-  "Godly": 0xffff00,
-  "???": 0x111111,
-  "LIMITED EVENT": 0x55ffff
-};
-
 // RARITY EMOJIS
 function getRarityEmoji(rarity) {
   switch ((rarity || '').toUpperCase()) {
