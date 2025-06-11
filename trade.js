@@ -247,7 +247,11 @@ async function handleTradeSelectMenu(interaction) {
 async function handleTradeNoteModal(interaction, TRADE_POSTS_CHANNEL_ID) {
   try {
     if (!TRADE_POSTS_CHANNEL_ID) log && log("TRADE_POSTS_CHANNEL_ID is missing!");
-    const [carNameEncoded, serial] = interaction.customId.replace('tradeNoteModal:', '').split('#');
+    // Fix: Always parse and strip prefix from modal customId!
+    let [carNameEncodedWithPrefix, serial] = interaction.customId.replace('tradeNoteModal:', '').split('#');
+    let carNameEncoded = carNameEncodedWithPrefix.startsWith('car-')
+      ? carNameEncodedWithPrefix.slice(4)
+      : carNameEncodedWithPrefix;
     const carName = decodeURIComponent(carNameEncoded).trim();
     const note = interaction.fields.getTextInputValue('tradeNote') || '';
     const userId = interaction.user.id;
