@@ -157,8 +157,12 @@ async function handleTradeCommand(interaction, TRADE_COMMAND_CHANNEL_ID) {
     const uniqueChoices = new Set();
     const carChoices = [];
     for (const c of garage.cars) {
+      // Strict validation: skip if name or serial is missing or empty
+      if (!c.name || typeof c.serial === 'undefined' || c.name.trim().length === 0 || String(c.serial).length === 0)
+        continue;
       // Prefix to guarantee value is always 6+ chars
       const value = `car-${encodeURIComponent(c.name)}#${c.serial}`;
+      if (value.length < 6) continue;
       if (!uniqueChoices.has(value)) {
         uniqueChoices.add(value);
         carChoices.push({
@@ -169,7 +173,7 @@ async function handleTradeCommand(interaction, TRADE_COMMAND_CHANNEL_ID) {
     }
     const limitedCarChoices = carChoices.slice(0, 25);
 
-    // Safety: check for short values
+    // Safety: check for short values (should never trigger now)
     for (const opt of limitedCarChoices) {
       if (opt.value.length < 6) {
         log && log('[ERROR] Select menu option value too short:', opt);
@@ -345,8 +349,12 @@ async function handleSendOfferButton(interaction) {
     const uniqueChoices = new Set();
     const carChoices = [];
     for (const c of fromGarage.cars) {
+      // Strict validation: skip if name or serial is missing or empty
+      if (!c.name || typeof c.serial === 'undefined' || c.name.trim().length === 0 || String(c.serial).length === 0)
+        continue;
       // Prefix to guarantee value is always 6+ chars
       const value = `car-${encodeURIComponent(c.name)}#${c.serial}`;
+      if (value.length < 6) continue;
       if (!uniqueChoices.has(value)) {
         uniqueChoices.add(value);
         carChoices.push({
@@ -357,7 +365,7 @@ async function handleSendOfferButton(interaction) {
     }
     const limitedCarChoices = carChoices.slice(0, 25);
 
-    // Safety: check for short values
+    // Safety: check for short values (should never trigger now)
     for (const opt of limitedCarChoices) {
       if (opt.value.length < 6) {
         log && log('[ERROR] Select menu option value too short:', opt);
