@@ -1,27 +1,29 @@
 const { EmbedBuilder } = require('discord.js');
 
-// Rarity emojis and colors
+// Rarity emojis and colors (updated for ??? and Mythic)
 const rarityEmojis = {
-  Common: '⬜',
-  Uncommon: '🟩',
-  Rare: '🟦',
-  Epic: '🟪',
-  Legendary: '🟧',
-  Mythic: '🟥',
-  'Ultra Mythic': '🟫',
-  Godly: '🟨',
-  'LIMITED EVENT': '🎉'
+  "Common": '⬜',
+  "Uncommon": '🟩',
+  "Rare": '🟦',
+  "Epic": '🟪',
+  "Legendary": '🟧',
+  "Mythic": '🟥',
+  "Ultra Mythic": '🟫',
+  "Godly": '🟨',
+  "???": '⬛',
+  "LIMITED EVENT": '🎉'
 };
 const rarityColors = {
-  Common: 0xAAAAAA,
-  Uncommon: 0x00FF00,
-  Rare: 0x0099FF,
-  Epic: 0x8000FF,
-  Legendary: 0xFFA500,
-  Mythic: 0xFF0000,
-  'Ultra Mythic': 0x9900FF,
-  Godly: 0xFFD700,
-  'LIMITED EVENT': 0xD726FF
+  "Common": 0xAAAAAA,
+  "Uncommon": 0x00FF00,
+  "Rare": 0x0099FF,
+  "Epic": 0x8000FF,
+  "Legendary": 0xFFA500,
+  "Mythic": 0xFF0000,
+  "Ultra Mythic": 0x9900FF,
+  "Godly": 0xFFD700,
+  "???": 0x111111,
+  "LIMITED EVENT": 0xD726FF
 };
 
 function getRarityEmoji(rarity) {
