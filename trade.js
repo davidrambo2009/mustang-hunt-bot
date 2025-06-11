@@ -1,3 +1,4 @@
+// MAXIMUM DEBUG VERSION FOR TRADE.JS
 const {
   EmbedBuilder,
   ActionRowBuilder,
@@ -84,6 +85,26 @@ async function safeReply(interaction, msg) {
   }
 }
 
+// Debug utility to log any array of menu options
+function debugOptionsArray(label, optionsArray) {
+  console.log(`=== DEBUG: ${label} ===`);
+  if (!Array.isArray(optionsArray)) {
+    console.error(`[ERROR] ${label} is not an array:`, optionsArray);
+    throw new Error(`[ERROR] ${label} is not an array`);
+  }
+  optionsArray.forEach((opt, idx) => {
+    console.log(`[${label}][${idx}]`, opt);
+    if (!opt.value || opt.value.length < 6) {
+      console.error(`[ERROR] ${label} option value too short [${idx}]:`, opt);
+      throw new Error(`[ERROR] ${label} option value too short: ` + JSON.stringify(opt));
+    }
+    if (!opt.label || opt.label.length < 1) {
+      console.error(`[ERROR] ${label} option label too short [${idx}]:`, opt);
+      throw new Error(`[ERROR] ${label} option label too short: ` + JSON.stringify(opt));
+    }
+  });
+}
+
 // --- Trade History Logger (for trade-history channel) ---
 async function logTradeHistory({
   client,
@@ -145,23 +166,39 @@ async function logTradeHistory({
 // --- /trade command handler ---
 async function handleTradeCommand(interaction, TRADE_COMMAND_CHANNEL_ID) {
   try {
+    console.log("=== DEBUG: handleTradeCommand called by user", interaction.user.id, interaction.user.username);
     const userId = interaction.user.id;
     if (interaction.channel.id !== TRADE_COMMAND_CHANNEL_ID) {
       return safeReply(interaction, `❌ Please use this command in <#${TRADE_COMMAND_CHANNEL_ID}>.`);
     }
     const garage = await Garage.findOne({ userId });
+    console.log("=== DEBUG: Garage for user", userId, "===", JSON.stringify(garage, null, 2));
     if (!garage || !Array.isArray(garage.cars) || garage.cars.length === 0)
       return safeReply(interaction, '🚫 Your garage is empty.');
+
+    // Log every car object as found
+    garage.cars.forEach((c, idx) => {
+      console.log(`[DEBUG] Garage.cars[${idx}] =`, c);
+      if (!c.name || c.name.length < 1) {
+        console.error(`[ERROR] Car at idx ${idx} has no name`, c);
+      }
+      if (typeof c.serial === 'undefined') {
+        console.error(`[ERROR] Car at idx ${idx} has no serial`, c);
+      }
+    });
 
     const uniqueChoices = new Set();
     const carChoices = [];
     for (const c of garage.cars) {
-      // Strict validation: skip if name or serial is missing or empty
-      if (!c.name || typeof c.serial === 'undefined' || c.name.trim().length === 0 || String(c.serial).length === 0)
+      if (!c.name || typeof c.serial === 'undefined' || c.name.trim().length === 0 || String(c.serial).length === 0) {
+        console.error('[ERROR] Skipping car for menu:', c);
         continue;
-      // Prefix to guarantee value is always 6+ chars
+      }
       const value = `car-${encodeURIComponent(c.name)}#${c.serial}`;
-      if (value.length < 6) continue;
+      if (value.length < 6) {
+        console.error('[ERROR] Menu value too short:', value, c);
+        continue;
+      }
       if (!uniqueChoices.has(value)) {
         uniqueChoices.add(value);
         carChoices.push({
@@ -172,15 +209,7 @@ async function handleTradeCommand(interaction, TRADE_COMMAND_CHANNEL_ID) {
     }
     const limitedCarChoices = carChoices.slice(0, 25);
 
-    // --- DEBUG BLOCK ---
-    console.log("=== DEBUG: limitedCarChoices (trade command) ===", limitedCarChoices);
-    for (const opt of limitedCarChoices) {
-      if (!opt.value || opt.value.length < 6) {
-        console.error('[ERROR] Select menu option value too short:', opt);
-        throw new Error('Select menu option value too short: ' + JSON.stringify(opt));
-      }
-    }
-    // --- END DEBUG BLOCK ---
+    debugOptionsArray('limitedCarChoices (trade command)', limitedCarChoices);
 
     const row = new ActionRowBuilder().addComponents(
       new StringSelectMenuBuilder()
@@ -201,6 +230,7 @@ async function handleCancelTradeCommand(interaction, TRADE_POSTS_CHANNEL_ID) {
     if (!TRADE_POSTS_CHANNEL_ID) log && log("TRADE_POSTS_CHANNEL_ID is missing!");
     const userId = interaction.user.id;
     const listings = await TradeListing.find({ userId, active: true });
+    console.log("=== DEBUG: handleCancelTradeCommand listings ===", listings);
     if (!listings.length) return safeReply(interaction, '🚫 No active listings found.');
 
     const channel = await interaction.client.channels.fetch(TRADE_POSTS_CHANNEL_ID);
@@ -227,13 +257,14 @@ async function handleCancelTradeCommand(interaction, TRADE_POSTS_CHANNEL_ID) {
 // --- trade car selection menu handler ---
 async function handleTradeSelectMenu(interaction) {
   try {
+    console.log("=== DEBUG: handleTradeSelectMenu called ===", interaction.customId, interaction.values);
     const [_, userId] = interaction.customId.split(':');
-    // PATCH: decode/prefix strip
     let [carNameEncodedWithPrefix, serial] = interaction.values[0].split('#');
     let carNameEncoded = carNameEncodedWithPrefix.startsWith('car-')
       ? carNameEncodedWithPrefix.slice(4)
       : carNameEncodedWithPrefix;
     const carName = decodeURIComponent(carNameEncoded).trim();
+    console.log(`[DEBUG] Selected carName: ${carName}, serial: ${serial}`);
 
     // Show a modal to collect the note
     const noteModal = new ModalBuilder()
@@ -261,7 +292,6 @@ async function handleTradeSelectMenu(interaction) {
 async function handleTradeNoteModal(interaction, TRADE_POSTS_CHANNEL_ID) {
   try {
     if (!TRADE_POSTS_CHANNEL_ID) log && log("TRADE_POSTS_CHANNEL_ID is missing!");
-    // Fix: Always parse and strip prefix from modal customId!
     let [carNameEncodedWithPrefix, serial] = interaction.customId.replace('tradeNoteModal:', '').split('#');
     let carNameEncoded = carNameEncodedWithPrefix.startsWith('car-')
       ? carNameEncodedWithPrefix.slice(4)
@@ -269,6 +299,8 @@ async function handleTradeNoteModal(interaction, TRADE_POSTS_CHANNEL_ID) {
     const carName = decodeURIComponent(carNameEncoded).trim();
     const note = interaction.fields.getTextInputValue('tradeNote') || '';
     const userId = interaction.user.id;
+
+    console.log(`[DEBUG] handleTradeNoteModal carName: ${carName}, serial: ${serial}, note:`, note);
 
     const tradeChannel = await interaction.client.channels.fetch(TRADE_POSTS_CHANNEL_ID);
 
@@ -335,6 +367,7 @@ async function handleTradeNoteModal(interaction, TRADE_POSTS_CHANNEL_ID) {
 // --- send offer button handler ---
 async function handleSendOfferButton(interaction) {
   try {
+    console.log("=== DEBUG: handleSendOfferButton called ===", interaction.customId);
     const parts = interaction.customId.split(':');
     const [, listingOwnerId, carNameEncoded, serial] = parts;
     const carName = decodeURIComponent(carNameEncoded).trim();
@@ -344,18 +377,32 @@ async function handleSendOfferButton(interaction) {
     }
 
     const fromGarage = await Garage.findOne({ userId: interaction.user.id });
+    console.log("=== DEBUG: fromGarage ===", JSON.stringify(fromGarage, null, 2));
     if (!fromGarage || !Array.isArray(fromGarage.cars) || fromGarage.cars.length === 0)
       return safeReply(interaction, '🚫 You have no cars to offer.');
+
+    fromGarage.cars.forEach((c, idx) => {
+      console.log(`[DEBUG] fromGarage.cars[${idx}] =`, c);
+      if (!c.name || c.name.length < 1) {
+        console.error(`[ERROR] Offered car at idx ${idx} has no name`, c);
+      }
+      if (typeof c.serial === 'undefined') {
+        console.error(`[ERROR] Offered car at idx ${idx} has no serial`, c);
+      }
+    });
 
     const uniqueChoices = new Set();
     const carChoices = [];
     for (const c of fromGarage.cars) {
-      // Strict validation: skip if name or serial is missing or empty
-      if (!c.name || typeof c.serial === 'undefined' || c.name.trim().length === 0 || String(c.serial).length === 0)
+      if (!c.name || typeof c.serial === 'undefined' || c.name.trim().length === 0 || String(c.serial).length === 0) {
+        console.error('[ERROR] Skipping car for offer menu:', c);
         continue;
-      // Prefix to guarantee value is always 6+ chars
+      }
       const value = `car-${encodeURIComponent(c.name)}#${c.serial}`;
-      if (value.length < 6) continue;
+      if (value.length < 6) {
+        console.error('[ERROR] Offered menu value too short:', value, c);
+        continue;
+      }
       if (!uniqueChoices.has(value)) {
         uniqueChoices.add(value);
         carChoices.push({
@@ -366,15 +413,7 @@ async function handleSendOfferButton(interaction) {
     }
     const limitedCarChoices = carChoices.slice(0, 25);
 
-    // --- DEBUG BLOCK ---
-    console.log("=== DEBUG: limitedCarChoices (send offer) ===", limitedCarChoices);
-    for (const opt of limitedCarChoices) {
-      if (!opt.value || opt.value.length < 6) {
-        console.error('[ERROR] Select menu option value too short:', opt);
-        throw new Error('Select menu option value too short: ' + JSON.stringify(opt));
-      }
-    }
-    // --- END DEBUG BLOCK ---
+    debugOptionsArray('limitedCarChoices (send offer)', limitedCarChoices);
 
     const row = new ActionRowBuilder().addComponents(
       new StringSelectMenuBuilder()
@@ -396,18 +435,20 @@ async function handleSendOfferButton(interaction) {
 async function handleChooseOfferMenu(interaction, TRADEOFFERS_CHANNEL_ID) {
   try {
     if (!TRADEOFFERS_CHANNEL_ID) log && log("TRADEOFFERS_CHANNEL_ID is missing!");
+    console.log("=== DEBUG: handleChooseOfferMenu called ===", interaction.customId, interaction.values);
     const [_, senderId, receiverId, carNameEncoded, serial] = interaction.customId.split(':');
     const carName = decodeURIComponent(carNameEncoded).trim();
 
     // Get all selected cars (up to 6)
-    const offeredCars = interaction.values.map(selected => {
-      // PATCH: decode/prefix strip
+    const offeredCars = interaction.values.map((selected, i) => {
       const [offeredNameEncodedWithPrefix, offeredSerial] = selected.split('#');
       const offeredNameEncoded = offeredNameEncodedWithPrefix.startsWith('car-')
         ? offeredNameEncodedWithPrefix.slice(4)
         : offeredNameEncodedWithPrefix;
+      const name = decodeURIComponent(offeredNameEncoded).trim();
+      console.log(`[DEBUG] handleChooseOfferMenu offeredCar[${i}]:`, { name, serial: offeredSerial });
       return {
-        name: decodeURIComponent(offeredNameEncoded).trim(),
+        name,
         serial: parseInt(offeredSerial, 10)
       };
     });
@@ -490,6 +531,7 @@ async function handleOfferButton(interaction, TRADE_POSTS_CHANNEL_ID, TRADEOFFER
 
     // --- Always fetch the offer from DB to get the correct toUserId (listing owner) ---
     const offer = await TradeOffer.findById(offerId);
+    console.log("=== DEBUG: handleOfferButton offer ===", offer);
     if (!offer) {
       return safeReply(interaction, '❌ Offer not found or already handled.');
     }
