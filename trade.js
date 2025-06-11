@@ -4,6 +4,7 @@ const {
   ButtonBuilder,
   ButtonStyle,
   StringSelectMenuBuilder,
+  StringSelectMenuOptionBuilder,
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
@@ -210,7 +211,7 @@ async function handleTradeCommand(interaction, TRADE_COMMAND_CHANNEL_ID) {
 
     debugOptionsArray('limitedCarChoices (trade command)', limitedCarChoices);
 
-    // CLEAN undefined emojis
+    // CLEAN undefined emojis (not strictly needed, but kept for safety)
     const cleanedChoices = limitedCarChoices.map(opt => {
       if (typeof opt.emoji === "undefined") delete opt.emoji;
       return opt;
@@ -225,7 +226,15 @@ async function handleTradeCommand(interaction, TRADE_COMMAND_CHANNEL_ID) {
       new StringSelectMenuBuilder()
         .setCustomId(`tradeSelect:${userId}`)
         .setPlaceholder('Select a car to list for trade')
-        .addOptions(cleanedChoices)
+        .addOptions(
+          ...cleanedChoices.map(opt => {
+            const builder = new StringSelectMenuOptionBuilder()
+              .setLabel(opt.label)
+              .setValue(opt.value);
+            if (opt.emoji) builder.setEmoji(opt.emoji);
+            return builder;
+          })
+        )
     );
 
     // LOG RAW PAYLOAD
@@ -446,7 +455,7 @@ async function handleSendOfferButton(interaction) {
 
     debugOptionsArray('limitedCarChoices (send offer)', limitedCarChoices);
 
-    // CLEAN undefined emojis
+    // CLEAN undefined emojis (not strictly needed, but kept for safety)
     const cleanedChoices = limitedCarChoices.map(opt => {
       if (typeof opt.emoji === "undefined") delete opt.emoji;
       return opt;
@@ -461,9 +470,17 @@ async function handleSendOfferButton(interaction) {
       new StringSelectMenuBuilder()
         .setCustomId(`chooseOffer:${interaction.user.id}:${listingOwnerId}:${encodeURIComponent(carName)}:${serial}`)
         .setPlaceholder('Select up to 6 cars to offer')
-        .addOptions(cleanedChoices)
         .setMinValues(1)
         .setMaxValues(6)
+        .addOptions(
+          ...cleanedChoices.map(opt => {
+            const builder = new StringSelectMenuOptionBuilder()
+              .setLabel(opt.label)
+              .setValue(opt.value);
+            if (opt.emoji) builder.setEmoji(opt.emoji);
+            return builder;
+          })
+        )
     );
 
     // LOG RAW PAYLOAD
