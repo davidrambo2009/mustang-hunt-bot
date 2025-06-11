@@ -69,7 +69,10 @@ const tradeOfferSchema = new mongoose.Schema({
 });
 const TradeOffer = mongoose.model('TradeOffer', tradeOfferSchema);
 
-// CARS DATA
+// --- RARITIES UPDATED: Now supports up to level 16, with new tiers ---
+// Rarity order: Common < Uncommon < Rare < Epic < Legendary < Mythic < Ultra Mythic < Godly < ???
+// The "???" rarity is black, and is the rarest (rarityLevel 16).
+
 const cars = [
   { name: '2015 Mustang EcoBoost', rarity: 'Common', rarityLevel: 1 },
   { name: '2018 Mustang GT', rarity: 'Uncommon', rarityLevel: 3 },
@@ -77,17 +80,17 @@ const cars = [
   { name: '2020 Shelby GT500', rarity: 'Rare', rarityLevel: 6 },
   { name: '2021 Mustang Mach 1', rarity: 'Rare', rarityLevel: 5 },
   { name: '2024 Mustang GT', rarity: 'Uncommon', rarityLevel: 3 },
-  { name: '2024 Mustang Dark Horse', rarity: 'Epic', rarityLevel: 7 },
-  { name: '2024 Supercharged Mustang GT', rarity: 'Epic', rarityLevel: 6 },
+  { name: '2024 Mustang Dark Horse', rarity: 'Epic', rarityLevel: 8 },
+  { name: '2024 Supercharged Mustang GT', rarity: 'Epic', rarityLevel: 7 },
   { name: '2025 Mustang EcoBoost', rarity: 'Common', rarityLevel: 1 },
   { name: '2025 Mustang GT 60th Anniversary', rarity: 'Rare', rarityLevel: 5 },
-  { name: '2025 GT350', rarity: 'Epic', rarityLevel: 7 },
-  { name: '2025 Shelby Super Snake', rarity: 'Legendary', rarityLevel: 9 },
+  { name: '2025 GT350', rarity: 'Epic', rarityLevel: 8 },
+  { name: '2025 Shelby Super Snake', rarity: 'Legendary', rarityLevel: 10 },
   { name: '2014 Mustang V6 Coupe', rarity: 'Common', rarityLevel: 1 },
   { name: '2014 Mustang GT', rarity: 'Common', rarityLevel: 1 },
   { name: '2019 Mustang EcoBoost Convertible', rarity: 'Common', rarityLevel: 1 },
   { name: '2023 Mustang EcoBoost', rarity: 'Common', rarityLevel: 1 },
-  { name: '2023 Mustang Mach-E', rarity: 'Uncommon', rarityLevel: 3 },
+  { name: '2023 Mustang Mach-E', rarity: 'Uncommon', rarityLevel: 4 },
   { name: '2022 Mustang Mach-E GT', rarity: 'Rare', rarityLevel: 5 },
   { name: '2024 Mustang GT3', rarity: 'Legendary', rarityLevel: 0 },
   { name: '2024 Mustang GT4', rarity: 'Epic', rarityLevel: 0 },
@@ -95,37 +98,75 @@ const cars = [
   { name: '2022 Mustang NASCAR Cup Car', rarity: 'LIMITED EVENT', rarityLevel: 0 },
   { name: '2000 SVT Cobra', rarity: 'Rare', rarityLevel: 5 },
   { name: '2004 SVT Cobra', rarity: 'Epic', rarityLevel: 7 },
-  { name: '2000 SVT Cobra R', rarity: 'Ultra Mythic', rarityLevel: 11 },
-  { name: 'Cobra Jet Mustang', rarity: 'Godly', rarityLevel: 12 },
+  { name: '2000 SVT Cobra R', rarity: 'Ultra Mythic', rarityLevel: 14 },
+  { name: 'Cobra Jet Mustang', rarity: 'Godly', rarityLevel: 15 },
   { name: '1964 Mustang Coupe', rarity: 'Common', rarityLevel: 1 },
-  { name: '1965 Shelby GT350R', rarity: 'Legendary', rarityLevel: 9 },
-  { name: '1966 Mustang GT350', rarity: 'Rare', rarityLevel: 5 },
-  { name: '1967 Shelby GT500', rarity: 'Godly', rarityLevel: 12 },
-  { name: '1968 Shelby GT500KR', rarity: 'Epic', rarityLevel: 7 },
-  { name: '1969 Mustang Mach 1', rarity: 'Rare', rarityLevel: 5 },
-  { name: '1969 Boss 429', rarity: 'Ultra Mythic', rarityLevel: 11 },
-  { name: '1969 Shelby GT500', rarity: 'Legendary', rarityLevel: 9 },
-  { name: '1970 Boss 302', rarity: 'Rare', rarityLevel: 5 },
-  { name: '1971 Mustang Mach 1', rarity: 'Uncommon', rarityLevel: 3 },
+  { name: '1965 Shelby GT350R', rarity: 'Legendary', rarityLevel: 10 },
+  { name: '1966 Mustang GT350', rarity: 'Rare', rarityLevel: 6 },
+  { name: '1967 Shelby GT500', rarity: 'Godly', rarityLevel: 15 },
+  { name: '1968 Shelby GT500KR', rarity: 'Epic', rarityLevel: 9 },
+  { name: '1969 Mustang Mach 1', rarity: 'Rare', rarityLevel: 6 },
+  { name: '1969 Boss 429', rarity: 'Ultra Mythic', rarityLevel: 14 },
+  { name: '1969 Shelby GT500', rarity: 'Legendary', rarityLevel: 11 },
+  { name: '1970 Boss 302', rarity: 'Rare', rarityLevel: 6 },
+  { name: '1971 Mustang Mach 1', rarity: 'Uncommon', rarityLevel: 4 },
   { name: '1973 Mustang Convertible', rarity: 'Common', rarityLevel: 1 }
 ];
 
-const nascarUnlockCar = '2022 Mustang NASCAR Cup Car';
-const requiredForNascar = ['2024 Mustang GT3', '2024 Mustang GT4', '2025 Mustang GTD'];
+// NOTE: If you want to add a "Mythic" car in the future, use rarityLevel 12 or 13 for that tier.
 
-let dropState = { activeDrop: null, dropTimeout: null };
-const claimingUsers = new Set();
-const claimCooldowns = new Map();
+// RARITY COLORS (for the updated garage and drop messages)
+// You may want to update dropCar.js to support "???" and "Mythic"
+const rarityColors = {
+  "Common": 0xffffff,
+  "Uncommon": 0x43e660,
+  "Rare": 0x007bff,
+  "Epic": 0x9d30d8,
+  "Legendary": 0xff8800,
+  "Mythic": 0xff3c3c,
+  "Ultra Mythic": 0x6a00a3,
+  "Godly": 0xffff00,
+  "???": 0x111111,
+  "LIMITED EVENT": 0x55ffff
+};
 
-function getChanceFromRarity(level) {
-  return 12 / level;
+// RARITY EMOJIS
+function getRarityEmoji(rarity) {
+  switch ((rarity || '').toUpperCase()) {
+    case "COMMON": return "⚪️";
+    case "UNCOMMON": return "🟢";
+    case "RARE": return "🔵";
+    case "EPIC": return "🟣";
+    case "LEGENDARY": return "🟠";
+    case "MYTHIC": return "🔴";
+    case "ULTRA MYTHIC": return "🟪";
+    case "GODLY": return "🟡";
+    case "???": return "⬛";
+    case "LIMITED EVENT": return "✨";
+    default: return "❓";
+  }
 }
+
+// --- UPDATED DROP CHANCE FORMULA ---
+// Level 1-16: exponential dropoff
+function getChanceFromRarity(level) {
+  if (level === 0) return 0;
+  return 1 / Math.pow(2, level - 1);
+}
+
+// --- RARITY TAGS FOR GARAGE ---
 function getRarityTag(car) {
   if (!car || !car.rarity) return '[Unknown]';
-  if (car.rarity === 'Godly') return '***[GODLY]***';
-  if (car.rarity === 'Ultra Mythic') return '**[ULTRA MYTHIC]**';
-  return `[${car.rarity.toUpperCase()}]`;
+  switch (car.rarity) {
+    case 'Godly': return '***[GODLY]***';
+    case 'Ultra Mythic': return '**[ULTRA MYTHIC]**';
+    case 'Mythic': return '**[MYTHIC]**';
+    case '???': return '**[???]**';
+    default: return `[${car.rarity.toUpperCase()}]`;
+  }
 }
+
+// --- RANDOM CAR DROP (weighted by rarity) ---
 function getRandomCar() {
   const weighted = cars
     .filter(car => car.rarityLevel > 0)
@@ -139,6 +180,7 @@ function getRandomCar() {
   }
   return weighted[0];
 }
+
 function chunkArray(arr, size) {
   const result = [];
   for (let i = 0; i < arr.length; i += size) result.push(arr.slice(i, i + size));
@@ -154,6 +196,7 @@ function calculateGlobalCounts(garages) {
   return globalCount;
 }
 
+// --- UPDATED GARAGE DISPLAY ---
 function renderGaragePage(viewerId, garage, globalCount, pageIndex, garageOwnerUser, garageOwnerId, carsMeta) {
   const pages = chunkArray(garage.cars, 10);
 
@@ -170,20 +213,49 @@ function renderGaragePage(viewerId, garage, globalCount, pageIndex, garageOwnerU
     return { embed, components: [] };
   }
 
-  const count = {};
-  const list = pages[pageIndex].map(car => {
-    count[car.name] = (count[car.name] || 0) + 1;
-    const serial = car.serial;
-    const total = globalCount[car.name];
+  // [NEW] Group cars by rarity for visual separation
+  const rarityOrder = [
+    "???", "Godly", "Ultra Mythic", "Mythic", "Legendary", "Epic", "Rare", "Uncommon", "Common", "LIMITED EVENT"
+  ];
+
+  const carsOnPage = pages[pageIndex].map(car => {
     const meta = carsMeta.find(c => c.name === car.name);
-    return `${car.name} (#${serial} of ${total}) ${getRarityTag(meta)}`;
-  }).join('\n');
+    return {
+      ...car,
+      rarity: meta ? meta.rarity : "Unknown",
+      rarityLevel: meta ? meta.rarityLevel : 0
+    };
+  });
+
+  // Group by rarity (descending), then by car name
+  const grouped = {};
+  for (const rarity of rarityOrder) grouped[rarity] = [];
+  for (const car of carsOnPage) {
+    grouped[car.rarity] = grouped[car.rarity] || [];
+    grouped[car.rarity].push(car);
+  }
+
+  let list = '';
+  for (const rarity of rarityOrder) {
+    if (grouped[rarity] && grouped[rarity].length > 0) {
+      const emoji = getRarityEmoji(rarity);
+      list += `\n__**${emoji} ${rarity.toUpperCase()}**__\n`;
+      list += grouped[rarity]
+        .map(car => {
+          const serial = car.serial;
+          const total = globalCount[car.name] || 1;
+          return `**${car.name}** (#${serial} of ${total}) ${getRarityEmoji(rarity)}`;
+        })
+        .join('\n') + '\n';
+    }
+  }
+  list = list.trim();
 
   const embed = new EmbedBuilder()
     .setTitle(viewerId === garageOwnerId
       ? `🚗 Your Garage (${garage.cars.length} cars) - Page ${pageIndex + 1}/${pages.length}`
       : `🚗 ${garageOwnerUser.username}'s Garage - Page ${pageIndex + 1}/${pages.length}`)
-    .setDescription(list)
+    .setDescription(list.length ? list : 'No cars found.')
     .setColor(0x00BFFF);
 
   const row = new ActionRowBuilder();
@@ -204,6 +276,13 @@ function renderGaragePage(viewerId, garage, globalCount, pageIndex, garageOwnerU
 
   return { embed, components: row.components.length ? [row] : [] };
 }
+
+const nascarUnlockCar = '2022 Mustang NASCAR Cup Car';
+const requiredForNascar = ['2024 Mustang GT3', '2024 Mustang GT4', '2025 Mustang GTD'];
+
+let dropState = { activeDrop: null, dropTimeout: null };
+const claimingUsers = new Set();
+const claimCooldowns = new Map();
 
 function scheduleNextDrop(channel) {
   const delay = Math.floor(Math.random() * (45 - 10 + 1) + 10) * 60 * 1000;
