@@ -1,4 +1,3 @@
-// MAXIMUM DEBUG VERSION FOR TRADE.JS WITH RAW PAYLOAD LOGGING AND EMPTY OPTIONS CHECKS
 const {
   EmbedBuilder,
   ActionRowBuilder,
@@ -211,16 +210,22 @@ async function handleTradeCommand(interaction, TRADE_COMMAND_CHANNEL_ID) {
 
     debugOptionsArray('limitedCarChoices (trade command)', limitedCarChoices);
 
+    // CLEAN undefined emojis
+    const cleanedChoices = limitedCarChoices.map(opt => {
+      if (typeof opt.emoji === "undefined") delete opt.emoji;
+      return opt;
+    });
+
     // EMPTY CHECK
-    if (!Array.isArray(limitedCarChoices) || limitedCarChoices.length === 0) {
-      throw new Error("NO OPTIONS: limitedCarChoices is empty at trade command!");
+    if (!Array.isArray(cleanedChoices) || cleanedChoices.length === 0) {
+      throw new Error("NO OPTIONS: cleanedChoices is empty at trade command!");
     }
 
     const row = new ActionRowBuilder().addComponents(
       new StringSelectMenuBuilder()
         .setCustomId(`tradeSelect:${userId}`)
         .setPlaceholder('Select a car to list for trade')
-        .addOptions(limitedCarChoices)
+        .addOptions(cleanedChoices)
     );
 
     // LOG RAW PAYLOAD
@@ -441,16 +446,22 @@ async function handleSendOfferButton(interaction) {
 
     debugOptionsArray('limitedCarChoices (send offer)', limitedCarChoices);
 
+    // CLEAN undefined emojis
+    const cleanedChoices = limitedCarChoices.map(opt => {
+      if (typeof opt.emoji === "undefined") delete opt.emoji;
+      return opt;
+    });
+
     // EMPTY CHECK
-    if (!Array.isArray(limitedCarChoices) || limitedCarChoices.length === 0) {
-      throw new Error("NO OPTIONS: limitedCarChoices is empty at send offer menu!");
+    if (!Array.isArray(cleanedChoices) || cleanedChoices.length === 0) {
+      throw new Error("NO OPTIONS: cleanedChoices is empty at send offer menu!");
     }
 
     const row = new ActionRowBuilder().addComponents(
       new StringSelectMenuBuilder()
         .setCustomId(`chooseOffer:${interaction.user.id}:${listingOwnerId}:${encodeURIComponent(carName)}:${serial}`)
         .setPlaceholder('Select up to 6 cars to offer')
-        .addOptions(limitedCarChoices)
+        .addOptions(cleanedChoices)
         .setMinValues(1)
         .setMaxValues(6)
     );
