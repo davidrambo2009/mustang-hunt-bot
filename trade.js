@@ -157,7 +157,7 @@ async function handleTradeCommand(interaction, TRADE_COMMAND_CHANNEL_ID) {
     const uniqueChoices = new Set();
     const carChoices = [];
     for (const c of garage.cars) {
-      // Ensure value is always 6+ chars
+      // Prefix to guarantee value is always 6+ chars
       const value = `car-${encodeURIComponent(c.name)}#${c.serial}`;
       if (!uniqueChoices.has(value)) {
         uniqueChoices.add(value);
@@ -214,7 +214,11 @@ async function handleCancelTradeCommand(interaction, TRADE_POSTS_CHANNEL_ID) {
 async function handleTradeSelectMenu(interaction) {
   try {
     const [_, userId] = interaction.customId.split(':');
-    const [carNameEncoded, serial] = interaction.values[0].split('#');
+    // PATCH: decode/prefix strip
+    let [carNameEncodedWithPrefix, serial] = interaction.values[0].split('#');
+    let carNameEncoded = carNameEncodedWithPrefix.startsWith('car-')
+      ? carNameEncodedWithPrefix.slice(4)
+      : carNameEncodedWithPrefix;
     const carName = decodeURIComponent(carNameEncoded).trim();
 
     // Show a modal to collect the note
@@ -328,7 +332,7 @@ async function handleSendOfferButton(interaction) {
     const uniqueChoices = new Set();
     const carChoices = [];
     for (const c of fromGarage.cars) {
-      // Ensure value is always 6+ chars
+      // Prefix to guarantee value is always 6+ chars
       const value = `car-${encodeURIComponent(c.name)}#${c.serial}`;
       if (!uniqueChoices.has(value)) {
         uniqueChoices.add(value);
@@ -365,7 +369,7 @@ async function handleChooseOfferMenu(interaction, TRADEOFFERS_CHANNEL_ID) {
 
     // Get all selected cars (up to 6)
     const offeredCars = interaction.values.map(selected => {
-      // Allow for car- prefix
+      // PATCH: decode/prefix strip
       const [offeredNameEncodedWithPrefix, offeredSerial] = selected.split('#');
       const offeredNameEncoded = offeredNameEncodedWithPrefix.startsWith('car-')
         ? offeredNameEncodedWithPrefix.slice(4)
