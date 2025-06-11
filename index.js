@@ -5,6 +5,7 @@ const mongoose = require('mongoose');
 const { dropCar, getRarityEmoji, rarityColors } = require('./dropCar.js');
 const trade = require('./trade.js');
 const cars = require('./data/cars.js');
+const carinfoCmd = require('./commands/carinfo.js');
 const {
   Client, GatewayIntentBits, EmbedBuilder,
   SlashCommandBuilder, PermissionFlagsBits, ActionRowBuilder,
@@ -28,7 +29,6 @@ const client = new Client({
   ]
 });
 
-// CHANNEL IDS
 const DROP_CHANNEL_ID = '1372749024662257664';
 const GARAGE_CHANNEL_ID = '1372749137413668884';
 const TRADE_POSTS_CHANNEL_ID = '1374486602012692581';
@@ -37,7 +37,6 @@ const TRADE_COMMAND_CHANNEL_ID = '1374623379406979134';
 const TRADE_HISTORY_CHANNEL_ID = '1381780373192573019';
 const GUILD_ID = '1370450475400302686';
 
-// MODELS
 const garageSchema = new mongoose.Schema({
   userId: String,
   cars: [{ name: String, serial: Number }]
@@ -72,7 +71,6 @@ const TradeOffer = mongoose.model('TradeOffer', tradeOfferSchema);
 const nascarUnlockCar = '2022 Mustang NASCAR Cup Car';
 const requiredForNascar = ['2024 Mustang GT3', '2024 Mustang GT4', '2025 Mustang GTD'];
 
-// --- UTILITIES ---
 function getChanceFromRarity(level) {
   if (level === 0) return 0;
   return 1 / Math.pow(2, level - 1);
@@ -121,7 +119,6 @@ function calculateGlobalCounts(garages) {
   return globalCount;
 }
 
-// --- GARAGE DISPLAY ---
 function renderGaragePage(viewerId, garage, globalCount, pageIndex, garageOwnerUser, garageOwnerId, carsMeta) {
   const pages = chunkArray(garage.cars, 10);
 
@@ -138,12 +135,10 @@ function renderGaragePage(viewerId, garage, globalCount, pageIndex, garageOwnerU
     return { embed, components: [] };
   }
 
-  // Group cars by rarity for visual separation
   const rarityOrder = [
     "???", "Godly", "Ultra Mythic", "Mythic", "Legendary", "Epic", "Rare", "Uncommon", "Common", "LIMITED EVENT"
   ];
 
-  // Defensive: Fix undefined car fields
   const carsOnPage = pages[pageIndex].map(car => {
     if (!car || !car.name) return { name: "[Unknown]", serial: "?", rarity: "[Unknown]", rarityLevel: 0 };
     const meta = carsMeta.find(c => c.name === car.name);
@@ -206,7 +201,6 @@ function renderGaragePage(viewerId, garage, globalCount, pageIndex, garageOwnerU
   return { embed, components: row.components.length ? [row] : [] };
 }
 
-// --- DROP STATE ---
 let dropState = { activeDrop: null, dropTimeout: null };
 const claimingUsers = new Set();
 const claimCooldowns = new Map();
@@ -218,7 +212,6 @@ function scheduleNextDrop(channel) {
   }, delay);
 }
 
-// Set trade dependencies
 trade.setTradeDependencies({ Garage, TradeListing, TradeOffer, cars, log });
 
 async function cleanupExpiredTrades() {
@@ -304,6 +297,7 @@ client.once('ready', async () => {
     new SlashCommandBuilder().setName('trade').setDescription('List a car for trade (select from menu, then add a note)'),
     new SlashCommandBuilder().setName('canceltrade').setDescription('Cancel all your active trade listings'),
     new SlashCommandBuilder().setName('help').setDescription('Show help information for all commands'),
+    carinfoCmd.data,
   ].map(cmd => cmd.toJSON());
 
   try {
@@ -336,11 +330,16 @@ client.on('interactionCreate', async (interaction) => {
             { name: '/stats', value: 'View bot statistics (users, cars, uptime).' },
             { name: '/trade', value: `List a car from your garage for trade. **Use this command in <#${TRADE_COMMAND_CHANNEL_ID}>.** You'll select the car and can add a note. The listing will appear in <#${TRADE_POSTS_CHANNEL_ID}>.` },
             { name: '/canceltrade', value: 'Cancel all your active trade listings.' },
-            { name: '/help', value: 'Show this help message.' }
+            { name: '/help', value: 'Show this help message.' },
+            { name: '/carinfo', value: 'Select a car and view its detailed info.' }
           )
           .setFooter({ text: 'Tip: Use /trade only in the trade-commands channel; listings appear in #trade-posts.' })
           .setColor(0x00BFFF);
         return interaction.reply({ embeds: [embed], flags: 64 });
+      }
+
+      if (commandName === 'carinfo') {
+        return carinfoCmd.execute(interaction);
       }
 
       if (commandName === 'claim') {
@@ -359,7 +358,6 @@ client.on('interactionCreate', async (interaction) => {
           clearTimeout(dropState.dropTimeout);
           await dropState.activeDrop.message.delete().catch(() => {});
 
-          // Defensive: Make sure car data is present!
           const carObj = dropState.activeDrop.car;
           if (!carObj || !carObj.name) {
             await interaction.reply({ content: '❌ Error: claimed car is missing data.', flags: 64 });
@@ -384,7 +382,6 @@ client.on('interactionCreate', async (interaction) => {
           const globalCarCount = allGarages.reduce((sum, g) => sum + g.cars.filter(c => c.name === carObj.name).length, 0);
           garage.cars.push({ name: carObj.name, serial: globalCarCount + 1 });
 
-          // Defensive: Remove cars with undefined name
           garage.cars = garage.cars.filter(c => c && c.name);
 
           if (
@@ -431,7 +428,6 @@ client.on('interactionCreate', async (interaction) => {
           const garage = await Garage.findOne({ userId: target.id });
           if (!garage || garage.cars.length === 0) return interaction.reply({ content: '🚫 Garage is empty.', flags: 64 });
 
-          // Defensive: Remove cars with missing name
           garage.cars = garage.cars.filter(c => c && c.name);
 
           const all = await Garage.find();
@@ -483,7 +479,6 @@ client.on('interactionCreate', async (interaction) => {
       }
     }
 
-    // --- TRADE COMMANDS AND MENUS ---
     if (interaction.isChatInputCommand()) {
       if (interaction.commandName === 'trade') {
         await trade.handleTradeCommand(interaction, TRADE_COMMAND_CHANNEL_ID);
@@ -523,7 +518,7 @@ client.on('interactionCreate', async (interaction) => {
       );
       return;
     }
-    // --- GARAGE PAGINATION ---
+
     if (interaction.isButton() && interaction.customId.startsWith('garage:')) {
       try {
         const [, garageOwnerId, pageIndexStr] = interaction.customId.split(':');
@@ -542,7 +537,6 @@ client.on('interactionCreate', async (interaction) => {
           });
         }
 
-        // Defensive: Remove cars with missing name
         garage.cars = garage.cars.filter(c => c && c.name);
 
         const all = await Garage.find();
@@ -561,6 +555,18 @@ client.on('interactionCreate', async (interaction) => {
       }
       return;
     }
+
+    if (
+      (interaction.isButton() && (
+        interaction.customId === 'carinfo_prev' ||
+        interaction.customId === 'carinfo_next' ||
+        interaction.customId.startsWith('carinfo_back_')
+      )) ||
+      (interaction.isStringSelectMenu() && interaction.customId.startsWith('carinfo_select_'))
+    ) {
+      return carinfoCmd.execute(interaction);
+    }
+
   } catch (error) {
     log(`Interaction error: ${error}`);
     if (!interaction.replied && !interaction.deferred) {
