@@ -105,6 +105,21 @@ function debugOptionsArray(label, optionsArray) {
   });
 }
 
+// Pads select menu options to at least 10 with disabled dummy options (Discord API requirement for some select menus)
+function padSelectMenuOptions(options) {
+  const padded = [...options];
+  let count = 1;
+  while (padded.length < 10) {
+    padded.push({
+      label: '—',
+      value: `disabled-${count++}-${Math.random().toString(36).slice(2, 8)}`,
+      description: ' ',
+      disabled: true
+    });
+  }
+  return padded;
+}
+
 // --- Trade History Logger (for trade-history channel) ---
 async function logTradeHistory({
   client,
@@ -135,7 +150,7 @@ async function logTradeHistory({
     const user1 = listingUser;
     const user2 = offerUser;
     const car1 = offer.requestedCar;
-    const offeredCars = offer.offeredCars || [offer.offeredCar || offer.offeredCars]; // fallback for single car
+    const offeredCars = offer.offeredCars || [offer.offeredCar || offer.offeredCars];
 
     const { emoji: emoji1, rarity: rarity1 } = getCarEmbedVisuals(car1.name);
 
@@ -176,7 +191,6 @@ async function handleTradeCommand(interaction, TRADE_COMMAND_CHANNEL_ID) {
     if (!garage || !Array.isArray(garage.cars) || garage.cars.length === 0)
       return safeReply(interaction, '🚫 Your garage is empty.');
 
-    // Log every car object as found
     garage.cars.forEach((c, idx) => {
       console.log(`[DEBUG] Garage.cars[${idx}] =`, c);
       if (!c.name || c.name.length < 1) {
@@ -207,31 +221,24 @@ async function handleTradeCommand(interaction, TRADE_COMMAND_CHANNEL_ID) {
         });
       }
     }
-    const limitedCarChoices = carChoices.slice(0, 25);
+    let limitedCarChoices = carChoices.slice(0, 25);
 
     debugOptionsArray('limitedCarChoices (trade command)', limitedCarChoices);
 
-    // CLEAN undefined emojis (not strictly needed, but kept for safety)
-    const cleanedChoices = limitedCarChoices.map(opt => {
-      if (typeof opt.emoji === "undefined") delete opt.emoji;
-      return opt;
-    });
-
-    // EMPTY CHECK
-    if (!Array.isArray(cleanedChoices) || cleanedChoices.length === 0) {
-      throw new Error("NO OPTIONS: cleanedChoices is empty at trade command!");
-    }
+    // Pad to at least 10
+    limitedCarChoices = padSelectMenuOptions(limitedCarChoices);
 
     const row = new ActionRowBuilder().addComponents(
       new StringSelectMenuBuilder()
         .setCustomId(`tradeSelect:${userId}`)
         .setPlaceholder('Select a car to list for trade')
         .addOptions(
-          ...cleanedChoices.map(opt => {
+          ...limitedCarChoices.map(opt => {
             const builder = new StringSelectMenuOptionBuilder()
               .setLabel(opt.label)
-              .setValue(opt.value);
-            if (opt.emoji) builder.setEmoji(opt.emoji);
+              .setValue(opt.value)
+              .setDescription(opt.description || " ");
+            if (opt.disabled) builder.setDefault(false); // Mark as default, but will be ignored by Discord for disabled dummy
             return builder;
           })
         )
@@ -451,20 +458,12 @@ async function handleSendOfferButton(interaction) {
         });
       }
     }
-    const limitedCarChoices = carChoices.slice(0, 25);
+    let limitedCarChoices = carChoices.slice(0, 25);
 
     debugOptionsArray('limitedCarChoices (send offer)', limitedCarChoices);
 
-    // CLEAN undefined emojis (not strictly needed, but kept for safety)
-    const cleanedChoices = limitedCarChoices.map(opt => {
-      if (typeof opt.emoji === "undefined") delete opt.emoji;
-      return opt;
-    });
-
-    // EMPTY CHECK
-    if (!Array.isArray(cleanedChoices) || cleanedChoices.length === 0) {
-      throw new Error("NO OPTIONS: cleanedChoices is empty at send offer menu!");
-    }
+    // Pad to at least 10
+    limitedCarChoices = padSelectMenuOptions(limitedCarChoices);
 
     const row = new ActionRowBuilder().addComponents(
       new StringSelectMenuBuilder()
@@ -473,11 +472,12 @@ async function handleSendOfferButton(interaction) {
         .setMinValues(1)
         .setMaxValues(6)
         .addOptions(
-          ...cleanedChoices.map(opt => {
+          ...limitedCarChoices.map(opt => {
             const builder = new StringSelectMenuOptionBuilder()
               .setLabel(opt.label)
-              .setValue(opt.value);
-            if (opt.emoji) builder.setEmoji(opt.emoji);
+              .setValue(opt.value)
+              .setDescription(opt.description || " ");
+            if (opt.disabled) builder.setDefault(false);
             return builder;
           })
         )
