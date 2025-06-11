@@ -77,7 +77,6 @@ async function safeReply(interaction, msg) {
     } else if (interaction.deferred && !interaction.replied) {
       await interaction.editReply({ content: msg });
     } else {
-      // Already replied, just log
       log && log('safeReply: interaction already acknowledged, skipping');
     }
   } catch (err) {
@@ -151,7 +150,7 @@ async function handleTradeCommand(interaction, TRADE_COMMAND_CHANNEL_ID) {
       return safeReply(interaction, `❌ Please use this command in <#${TRADE_COMMAND_CHANNEL_ID}>.`);
     }
     const garage = await Garage.findOne({ userId });
-    if (!garage || garage.cars.length === 0)
+    if (!garage || !Array.isArray(garage.cars) || garage.cars.length === 0)
       return safeReply(interaction, '🚫 Your garage is empty.');
 
     const uniqueChoices = new Set();
@@ -175,8 +174,8 @@ async function handleTradeCommand(interaction, TRADE_COMMAND_CHANNEL_ID) {
 
     // Safety: check for short values (should never trigger now)
     for (const opt of limitedCarChoices) {
-      if (opt.value.length < 6) {
-        log && log('[ERROR] Select menu option value too short:', opt);
+      if (!opt.value || opt.value.length < 6) {
+        log && log('[ERROR] Select menu option value too short:', opt, limitedCarChoices);
         throw new Error('Select menu option value too short: ' + JSON.stringify(opt));
       }
     }
@@ -343,7 +342,7 @@ async function handleSendOfferButton(interaction) {
     }
 
     const fromGarage = await Garage.findOne({ userId: interaction.user.id });
-    if (!fromGarage || fromGarage.cars.length === 0)
+    if (!fromGarage || !Array.isArray(fromGarage.cars) || fromGarage.cars.length === 0)
       return safeReply(interaction, '🚫 You have no cars to offer.');
 
     const uniqueChoices = new Set();
@@ -367,8 +366,8 @@ async function handleSendOfferButton(interaction) {
 
     // Safety: check for short values (should never trigger now)
     for (const opt of limitedCarChoices) {
-      if (opt.value.length < 6) {
-        log && log('[ERROR] Select menu option value too short:', opt);
+      if (!opt.value || opt.value.length < 6) {
+        log && log('[ERROR] Select menu option value too short:', opt, limitedCarChoices);
         throw new Error('Select menu option value too short: ' + JSON.stringify(opt));
       }
     }
