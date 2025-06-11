@@ -73,12 +73,9 @@ async function safeReply(interaction, msg) {
     } else if (interaction.deferred && !interaction.replied) {
       await interaction.editReply({ content: msg });
     }
-  } catch (err) {
-    // ignore
-  }
+  } catch (err) {}
 }
 
-// Pads select menu options to at least 10 with disabled dummy options
 function padSelectMenuOptions(options) {
   const padded = [...options];
   let count = 1;
@@ -567,26 +564,35 @@ async function handleOfferButton(interaction, TRADE_POSTS_CHANNEL_ID, TRADEOFFER
       await fromGarage.save();
       await toGarage.save();
 
-      // PATCH: always update or delete the trade post after trade completion
+      // --- FINALIZED PATCH: always update or delete the trade post after trade completion ---
       const listing = await TradeListing.findOne({ 'car.name': offer.requestedCar.name, 'car.serial': offer.requestedCar.serial });
+      let listingMsg = null;
       if (listing) {
         listing.active = false;
         await listing.save();
         try {
           const tradePostsChannel = await interaction.client.channels.fetch(TRADE_POSTS_CHANNEL_ID);
           try {
-            const listingMsg = await tradePostsChannel.messages.fetch(listing.messageId);
+            listingMsg = await tradePostsChannel.messages.fetch(listing.messageId);
+          } catch (err) {
+            if (err.code === 10008) {
+              await TradeListing.findByIdAndDelete(listing._id);
+            } else {
+              console.error("Failed to fetch listing message in trade-posts:", err);
+            }
+          }
+          if (listingMsg) {
             await listingMsg.edit({
               content: '✅ This trade has been completed and is no longer available.',
               embeds: [],
               components: []
             });
-          } catch (err) {
-            if (err.code === 10008) {
-              await TradeListing.findByIdAndDelete(listing._id);
-            }
           }
-        } catch (err) {}
+        } catch (err) {
+          console.error("Failed to fetch or edit message in trade-posts:", err);
+        }
+      } else {
+        console.error("No TradeListing found for completed trade:", offer.requestedCar);
       }
 
       try {
