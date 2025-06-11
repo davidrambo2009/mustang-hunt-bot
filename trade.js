@@ -157,7 +157,8 @@ async function handleTradeCommand(interaction, TRADE_COMMAND_CHANNEL_ID) {
     const uniqueChoices = new Set();
     const carChoices = [];
     for (const c of garage.cars) {
-      const value = `${encodeURIComponent(c.name)}#${c.serial}`;
+      // Ensure value is always 6+ chars
+      const value = `car-${encodeURIComponent(c.name)}#${c.serial}`;
       if (!uniqueChoices.has(value)) {
         uniqueChoices.add(value);
         carChoices.push({
@@ -327,7 +328,8 @@ async function handleSendOfferButton(interaction) {
     const uniqueChoices = new Set();
     const carChoices = [];
     for (const c of fromGarage.cars) {
-      const value = `${encodeURIComponent(c.name)}#${c.serial}`;
+      // Ensure value is always 6+ chars
+      const value = `car-${encodeURIComponent(c.name)}#${c.serial}`;
       if (!uniqueChoices.has(value)) {
         uniqueChoices.add(value);
         carChoices.push({
@@ -363,7 +365,11 @@ async function handleChooseOfferMenu(interaction, TRADEOFFERS_CHANNEL_ID) {
 
     // Get all selected cars (up to 6)
     const offeredCars = interaction.values.map(selected => {
-      const [offeredNameEncoded, offeredSerial] = selected.split('#');
+      // Allow for car- prefix
+      const [offeredNameEncodedWithPrefix, offeredSerial] = selected.split('#');
+      const offeredNameEncoded = offeredNameEncodedWithPrefix.startsWith('car-')
+        ? offeredNameEncodedWithPrefix.slice(4)
+        : offeredNameEncodedWithPrefix;
       return {
         name: decodeURIComponent(offeredNameEncoded).trim(),
         serial: parseInt(offeredSerial, 10)
