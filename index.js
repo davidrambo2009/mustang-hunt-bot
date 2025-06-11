@@ -3,7 +3,7 @@ require('./keepAlive');
 const fs = require('fs');
 const mongoose = require('mongoose');
 const { dropCar, getRarityEmoji, rarityColors } = require('./dropCar.js');
-const trade = require('./trade.js');const rarityColors = {
+const trade = require('./trade.js');
 const {
   Client, GatewayIntentBits, EmbedBuilder,
   SlashCommandBuilder, PermissionFlagsBits, ActionRowBuilder,
@@ -56,7 +56,6 @@ const TradeListing = mongoose.model('TradeListing', tradeListingSchema);
 const tradeOfferSchema = new mongoose.Schema({
   fromUserId: String,
   toUserId: String,
-  // CHANGE: offeredCar ➡️ offeredCars (array of cars)
   offeredCars: [{
     name: String,
     serial: Number
@@ -69,10 +68,7 @@ const tradeOfferSchema = new mongoose.Schema({
 });
 const TradeOffer = mongoose.model('TradeOffer', tradeOfferSchema);
 
-// --- RARITIES UPDATED: Now supports up to level 16, with new tiers ---
-// Rarity order: Common < Uncommon < Rare < Epic < Legendary < Mythic < Ultra Mythic < Godly < ???
-// The "???" rarity is black, and is the rarest (rarityLevel 16).
-
+// --- CARS DATA ---
 const cars = [
   { name: '2015 Mustang EcoBoost', rarity: 'Common', rarityLevel: 1 },
   { name: '2018 Mustang GT', rarity: 'Uncommon', rarityLevel: 3 },
@@ -113,32 +109,15 @@ const cars = [
   { name: '1973 Mustang Convertible', rarity: 'Common', rarityLevel: 1 }
 ];
 
-// NOTE: If you want to add a "Mythic" car in the future, use rarityLevel 12 or 13 for that tier.
-// RARITY EMOJIS
-function getRarityEmoji(rarity) {
-  switch ((rarity || '').toUpperCase()) {
-    case "COMMON": return "⚪️";
-    case "UNCOMMON": return "🟢";
-    case "RARE": return "🔵";
-    case "EPIC": return "🟣";
-    case "LEGENDARY": return "🟠";
-    case "MYTHIC": return "🔴";
-    case "ULTRA MYTHIC": return "🟪";
-    case "GODLY": return "🟡";
-    case "???": return "⬛";
-    case "LIMITED EVENT": return "✨";
-    default: return "❓";
-  }
-}
+const nascarUnlockCar = '2022 Mustang NASCAR Cup Car';
+const requiredForNascar = ['2024 Mustang GT3', '2024 Mustang GT4', '2025 Mustang GTD'];
 
-// --- UPDATED DROP CHANCE FORMULA ---
-// Level 1-16: exponential dropoff
+// --- UTILITIES ---
 function getChanceFromRarity(level) {
   if (level === 0) return 0;
   return 1 / Math.pow(2, level - 1);
 }
 
-// --- RARITY TAGS FOR GARAGE ---
 function getRarityTag(car) {
   if (!car || !car.rarity) return '[Unknown]';
   switch (car.rarity) {
@@ -150,7 +129,6 @@ function getRarityTag(car) {
   }
 }
 
-// --- RANDOM CAR DROP (weighted by rarity) ---
 function getRandomCar() {
   const weighted = cars
     .filter(car => car.rarityLevel > 0)
@@ -170,6 +148,7 @@ function chunkArray(arr, size) {
   for (let i = 0; i < arr.length; i += size) result.push(arr.slice(i, i + size));
   return result;
 }
+
 function calculateGlobalCounts(garages) {
   const globalCount = {};
   for (const g of garages) {
@@ -180,7 +159,7 @@ function calculateGlobalCounts(garages) {
   return globalCount;
 }
 
-// --- UPDATED GARAGE DISPLAY ---
+// --- GARAGE DISPLAY ---
 function renderGaragePage(viewerId, garage, globalCount, pageIndex, garageOwnerUser, garageOwnerId, carsMeta) {
   const pages = chunkArray(garage.cars, 10);
 
@@ -197,7 +176,7 @@ function renderGaragePage(viewerId, garage, globalCount, pageIndex, garageOwnerU
     return { embed, components: [] };
   }
 
-  // [NEW] Group cars by rarity for visual separation
+  // Group cars by rarity for visual separation
   const rarityOrder = [
     "???", "Godly", "Ultra Mythic", "Mythic", "Legendary", "Epic", "Rare", "Uncommon", "Common", "LIMITED EVENT"
   ];
@@ -211,7 +190,6 @@ function renderGaragePage(viewerId, garage, globalCount, pageIndex, garageOwnerU
     };
   });
 
-  // Group by rarity (descending), then by car name
   const grouped = {};
   for (const rarity of rarityOrder) grouped[rarity] = [];
   for (const car of carsOnPage) {
@@ -261,9 +239,7 @@ function renderGaragePage(viewerId, garage, globalCount, pageIndex, garageOwnerU
   return { embed, components: row.components.length ? [row] : [] };
 }
 
-const nascarUnlockCar = '2022 Mustang NASCAR Cup Car';
-const requiredForNascar = ['2024 Mustang GT3', '2024 Mustang GT4', '2025 Mustang GTD'];
-
+// --- DROP STATE ---
 let dropState = { activeDrop: null, dropTimeout: null };
 const claimingUsers = new Set();
 const claimCooldowns = new Map();
@@ -376,7 +352,6 @@ client.once('ready', async () => {
 });
 
 client.on('interactionCreate', async (interaction) => {
-  // LOGGING BLOCK - Add this at the top!
   if (interaction.isStringSelectMenu()) {
     try {
       const options = interaction.component.options || [];
