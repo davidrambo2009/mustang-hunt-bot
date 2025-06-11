@@ -56,7 +56,11 @@ const TradeListing = mongoose.model('TradeListing', tradeListingSchema);
 const tradeOfferSchema = new mongoose.Schema({
   fromUserId: String,
   toUserId: String,
-  offeredCar: { name: String, serial: Number },
+  // CHANGE: offeredCar ➡️ offeredCars (array of cars)
+  offeredCars: [{
+    name: String,
+    serial: Number
+  }],
   requestedCar: { name: String, serial: Number },
   message: String,
   timestamp: { type: Date, default: Date.now },
