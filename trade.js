@@ -1,4 +1,4 @@
-// MAXIMUM DEBUG VERSION FOR TRADE.JS WITH FULL COMPONENT LOGGING
+// MAXIMUM DEBUG VERSION FOR TRADE.JS WITH RAW PAYLOAD LOGGING AND EMPTY OPTIONS CHECKS
 const {
   EmbedBuilder,
   ActionRowBuilder,
@@ -211,6 +211,11 @@ async function handleTradeCommand(interaction, TRADE_COMMAND_CHANNEL_ID) {
 
     debugOptionsArray('limitedCarChoices (trade command)', limitedCarChoices);
 
+    // EMPTY CHECK
+    if (!Array.isArray(limitedCarChoices) || limitedCarChoices.length === 0) {
+      throw new Error("NO OPTIONS: limitedCarChoices is empty at trade command!");
+    }
+
     const row = new ActionRowBuilder().addComponents(
       new StringSelectMenuBuilder()
         .setCustomId(`tradeSelect:${userId}`)
@@ -218,10 +223,14 @@ async function handleTradeCommand(interaction, TRADE_COMMAND_CHANNEL_ID) {
         .addOptions(limitedCarChoices)
     );
 
-    // DEBUG: Log full components object
+    // LOG RAW PAYLOAD
     console.log(
-      "=== COMPONENTS PASSED TO REPLY (trade command) ===\n",
-      require('util').inspect([row], { depth: 10, colors: true })
+      "=== RAW JSON PAYLOAD (trade command) ===\n",
+      JSON.stringify(
+        [row].map(r => r.toJSON ? r.toJSON() : r),
+        null,
+        2
+      )
     );
 
     await interaction.reply({ content: 'Select a car from your garage to list for trade:', components: [row], flags: 64 });
@@ -335,10 +344,14 @@ async function handleTradeNoteModal(interaction, TRADE_POSTS_CHANNEL_ID) {
         .setStyle(ButtonStyle.Primary)
     );
 
-    // Log the full components object
+    // LOG RAW PAYLOAD
     console.log(
-      "=== COMPONENTS PASSED TO REPLY (trade note modal) ===\n",
-      require('util').inspect([row], { depth: 10, colors: true })
+      "=== RAW JSON PAYLOAD (trade note modal) ===\n",
+      JSON.stringify(
+        [row].map(r => r.toJSON ? r.toJSON() : r),
+        null,
+        2
+      )
     );
 
     const msg = await tradeChannel.send({ embeds: [embed], components: [row] });
@@ -428,6 +441,11 @@ async function handleSendOfferButton(interaction) {
 
     debugOptionsArray('limitedCarChoices (send offer)', limitedCarChoices);
 
+    // EMPTY CHECK
+    if (!Array.isArray(limitedCarChoices) || limitedCarChoices.length === 0) {
+      throw new Error("NO OPTIONS: limitedCarChoices is empty at send offer menu!");
+    }
+
     const row = new ActionRowBuilder().addComponents(
       new StringSelectMenuBuilder()
         .setCustomId(`chooseOffer:${interaction.user.id}:${listingOwnerId}:${encodeURIComponent(carName)}:${serial}`)
@@ -437,10 +455,14 @@ async function handleSendOfferButton(interaction) {
         .setMaxValues(6)
     );
 
-    // Log the full components object
+    // LOG RAW PAYLOAD
     console.log(
-      "=== COMPONENTS PASSED TO REPLY (send offer) ===\n",
-      require('util').inspect([row], { depth: 10, colors: true })
+      "=== RAW JSON PAYLOAD (send offer) ===\n",
+      JSON.stringify(
+        [row].map(r => r.toJSON ? r.toJSON() : r),
+        null,
+        2
+      )
     );
 
     return interaction.reply({ content: 'Select up to 6 cars to offer in trade:', components: [row], flags: 64 });
@@ -524,10 +546,14 @@ async function handleChooseOfferMenu(interaction, TRADEOFFERS_CHANNEL_ID) {
         .setStyle(ButtonStyle.Danger)
     );
 
-    // Log the full components object
+    // LOG RAW PAYLOAD
     console.log(
-      "=== COMPONENTS PASSED TO REPLY (choose offer) ===\n",
-      require('util').inspect([offerRow], { depth: 10, colors: true })
+      "=== RAW JSON PAYLOAD (choose offer) ===\n",
+      JSON.stringify(
+        [offerRow].map(r => r.toJSON ? r.toJSON() : r),
+        null,
+        2
+      )
     );
 
     const tradeOffersChannel = await interaction.client.channels.fetch(TRADEOFFERS_CHANNEL_ID);
@@ -633,10 +659,14 @@ async function handleOfferButton(interaction, TRADE_POSTS_CHANNEL_ID, TRADEOFFER
             .setStyle(ButtonStyle.Danger)
         );
 
-        // Log the full components object for confirmation row
+        // LOG RAW PAYLOAD
         console.log(
-          "=== COMPONENTS PASSED TO REPLY (accept confirm) ===\n",
-          require('util').inspect([row], { depth: 10, colors: true })
+          "=== RAW JSON PAYLOAD (accept confirm) ===\n",
+          JSON.stringify(
+            [row].map(r => r.toJSON ? r.toJSON() : r),
+            null,
+            2
+          )
         );
 
         await safeReply(
