@@ -172,13 +172,15 @@ async function handleTradeCommand(interaction, TRADE_COMMAND_CHANNEL_ID) {
     }
     const limitedCarChoices = carChoices.slice(0, 25);
 
-    // Safety: check for short values (should never trigger now)
+    // --- DEBUG BLOCK ---
+    console.log("=== DEBUG: limitedCarChoices (trade command) ===", limitedCarChoices);
     for (const opt of limitedCarChoices) {
       if (!opt.value || opt.value.length < 6) {
-        log && log('[ERROR] Select menu option value too short:', opt, limitedCarChoices);
+        console.error('[ERROR] Select menu option value too short:', opt);
         throw new Error('Select menu option value too short: ' + JSON.stringify(opt));
       }
     }
+    // --- END DEBUG BLOCK ---
 
     const row = new ActionRowBuilder().addComponents(
       new StringSelectMenuBuilder()
@@ -364,13 +366,15 @@ async function handleSendOfferButton(interaction) {
     }
     const limitedCarChoices = carChoices.slice(0, 25);
 
-    // Safety: check for short values (should never trigger now)
+    // --- DEBUG BLOCK ---
+    console.log("=== DEBUG: limitedCarChoices (send offer) ===", limitedCarChoices);
     for (const opt of limitedCarChoices) {
       if (!opt.value || opt.value.length < 6) {
-        log && log('[ERROR] Select menu option value too short:', opt, limitedCarChoices);
+        console.error('[ERROR] Select menu option value too short:', opt);
         throw new Error('Select menu option value too short: ' + JSON.stringify(opt));
       }
     }
+    // --- END DEBUG BLOCK ---
 
     const row = new ActionRowBuilder().addComponents(
       new StringSelectMenuBuilder()
