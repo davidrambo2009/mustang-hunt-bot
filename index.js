@@ -153,7 +153,9 @@ function calculateGlobalCounts(garages) {
   const globalCount = {};
   for (const g of garages) {
     for (const car of g.cars) {
-      globalCount[car.name] = (globalCount[car.name] || 0) + 1;
+      if (car && car.name) {
+        globalCount[car.name] = (globalCount[car.name] || 0) + 1;
+      }
     }
   }
   return globalCount;
@@ -181,12 +183,16 @@ function renderGaragePage(viewerId, garage, globalCount, pageIndex, garageOwnerU
     "???", "Godly", "Ultra Mythic", "Mythic", "Legendary", "Epic", "Rare", "Uncommon", "Common", "LIMITED EVENT"
   ];
 
+  // Defensive: Fix undefined car fields
   const carsOnPage = pages[pageIndex].map(car => {
+    if (!car || !car.name) return { name: "[Unknown]", serial: "?", rarity: "[Unknown]", rarityLevel: 0 };
     const meta = carsMeta.find(c => c.name === car.name);
     return {
       ...car,
       rarity: meta ? meta.rarity : "Unknown",
-      rarityLevel: meta ? meta.rarityLevel : 0
+      rarityLevel: meta ? meta.rarityLevel : 0,
+      name: car.name || "[Unknown]",
+      serial: car.serial || "?"
     };
   });
 
@@ -204,9 +210,10 @@ function renderGaragePage(viewerId, garage, globalCount, pageIndex, garageOwnerU
       list += `\n__**${emoji} ${rarity.toUpperCase()}**__\n`;
       list += grouped[rarity]
         .map(car => {
-          const serial = car.serial;
-          const total = globalCount[car.name] || 1;
-          return `**${car.name}** (#${serial} of ${total}) ${getRarityEmoji(rarity)}`;
+          const name = car.name || "[Unknown]";
+          const serial = car.serial || "?";
+          const total = globalCount[name] || "1";
+          return `**${name}** (#${serial} of ${total}) ${getRarityEmoji(rarity)}`;
         })
         .join('\n') + '\n';
     }
@@ -352,20 +359,6 @@ client.once('ready', async () => {
 });
 
 client.on('interactionCreate', async (interaction) => {
-  // --- REMOVE DEBUG SPAM ---
-  // if (interaction.isStringSelectMenu()) {
-  //   try {
-  //     const options = interaction.component.options || [];
-  //     for (const opt of options) {
-  //       if (opt.value.length < 6) {
-  //         console.log('[DEBUG] Short select menu option detected:', opt, 'CustomId:', interaction.customId);
-  //       }
-  //     }
-  //   } catch (e) {
-  //     console.log('[DEBUG] Error inspecting select menu:', e);
-  //   }
-  // }
-
   try {
     if (interaction.isChatInputCommand()) {
       const { commandName, user, channel, options, member } = interaction;
@@ -405,20 +398,34 @@ client.on('interactionCreate', async (interaction) => {
           dropState.activeDrop.claimed = true;
           clearTimeout(dropState.dropTimeout);
           await dropState.activeDrop.message.delete().catch(() => {});
+
+          // Defensive: Make sure car data is present!
+          const carObj = dropState.activeDrop.car;
+          if (!carObj || !carObj.name) {
+            await interaction.reply({ content: '❌ Error: claimed car is missing data.', flags: 64 });
+            dropState.activeDrop = null;
+            scheduleNextDrop(channel);
+            return;
+          }
+
           const claimEmbed = new EmbedBuilder()
             .setTitle('🏆 Mustang Claimed!')
             .setDescription(
               `**${user.username}** claimed\n` +
-              `> 🚗 **${dropState.activeDrop.car.name}** ${getRarityEmoji(dropState.activeDrop.car.rarity)}`
+              `> 🚗 **${carObj.name}** ${getRarityEmoji(carObj.rarity)}`
             )
-            .setColor(rarityColors[dropState.activeDrop.car.rarity] || 0x00BFFF)
+            .setColor(rarityColors[carObj.rarity] || 0x00BFFF)
             .setFooter({ text: 'Congratulations on your new ride!' });
+
           await channel.send({ embeds: [claimEmbed] });
           let garage = await Garage.findOne({ userId });
           if (!garage) garage = new Garage({ userId, cars: [] });
           const allGarages = await Garage.find();
-          const globalCarCount = allGarages.reduce((sum, g) => sum + g.cars.filter(c => c.name === dropState.activeDrop.car.name).length, 0);
-          garage.cars.push({ name: dropState.activeDrop.car.name, serial: globalCarCount + 1 });
+          const globalCarCount = allGarages.reduce((sum, g) => sum + g.cars.filter(c => c.name === carObj.name).length, 0);
+          garage.cars.push({ name: carObj.name, serial: globalCarCount + 1 });
+
+          // Defensive: Remove cars with undefined name
+          garage.cars = garage.cars.filter(c => c && c.name);
 
           if (
             new Date() <= new Date('2025-05-31') &&
@@ -464,6 +471,9 @@ client.on('interactionCreate', async (interaction) => {
           const garage = await Garage.findOne({ userId: target.id });
           if (!garage || garage.cars.length === 0) return interaction.reply({ content: '🚫 Garage is empty.', flags: 64 });
 
+          // Defensive: Remove cars with missing name
+          garage.cars = garage.cars.filter(c => c && c.name);
+
           const all = await Garage.find();
           const globalCount = calculateGlobalCounts(all);
           const { embed, components } = renderGaragePage(user.id, garage, globalCount, 0, target, target.id, cars);
@@ -471,7 +481,6 @@ client.on('interactionCreate', async (interaction) => {
           await interaction.reply({ embeds: [embed], components, flags: 64 });
         } catch (error) {
           log(`DB ERROR in /garage: ${error}`);
-          // Only reply if not already replied/deferred!
           if (!interaction.replied && !interaction.deferred) {
             await interaction.reply({ content: '❌ An error occurred. Please try again later.', flags: 64 });
           }
@@ -572,6 +581,9 @@ client.on('interactionCreate', async (interaction) => {
             components: []
           });
         }
+
+        // Defensive: Remove cars with missing name
+        garage.cars = garage.cars.filter(c => c && c.name);
 
         const all = await Garage.find();
         const globalCount = calculateGlobalCounts(all);
