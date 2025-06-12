@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const cars = require('../data/cars.js'); // Adjust path if needed
+const Garage = require('../models/garage.js');
 
 const PAGE_SIZE = 25;
 
