@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const cars = require('../data/cars.js'); // adjust path as needed
 
 const PAGE_SIZE = 25;
@@ -14,10 +14,17 @@ function getTotalPages() {
   return Math.ceil(cars.length / PAGE_SIZE);
 }
 
+function formatDate(dateString) {
+  if (!dateString) return "Never";
+  const date = new Date(dateString);
+  if (isNaN(date)) return dateString;
+  return `<t:${Math.floor(date.getTime() / 1000)}:f>`;
+}
+
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('carinfo')
-    .setDescription('Select a car to view its detailed info.'),
+    .setDescription('Select a car to view its serials and drop/trade info.'),
   async execute(interaction) {
     let page = 0;
     const totalPages = getTotalPages();
@@ -30,11 +37,9 @@ module.exports = {
     }
 
     function getNavRow(page) {
-      const row = new ActionRowBuilder();
-      row.addComponents(getSelectMenu(page));
+      const row = new ActionRowBuilder().addComponents(getSelectMenu(page));
       if (totalPages > 1) {
-        const nav = new ActionRowBuilder();
-        nav.addComponents(
+        const nav = new ActionRowBuilder().addComponents(
           new ButtonBuilder()
             .setCustomId('carinfo_prev')
             .setLabel('Previous')
@@ -54,7 +59,7 @@ module.exports = {
     await interaction.reply({
       content: 'Select a car to view its info:',
       components: getNavRow(page),
-      ephemeral: true,
+      flags: 64,
     });
 
     const filter = i => i.user.id === interaction.user.id;
@@ -82,22 +87,34 @@ module.exports = {
             embeds: [],
           });
         }
+        // Back to list
+        if (i.customId.startsWith('carinfo_back_')) {
+          const prevPage = parseInt(i.customId.split('_').pop(), 10);
+          page = prevPage;
+          await i.update({
+            content: 'Select a car to view its info:',
+            components: getNavRow(page),
+            embeds: [],
+          });
+        }
         return;
       }
       // Car selection
       if (i.isStringSelectMenu() && i.customId.startsWith('carinfo_select_')) {
         const carName = i.values[0];
-        const carStatic = cars.find(c => c.name === carName);
+        const car = cars.find(c => c.name === carName);
 
         const embed = new EmbedBuilder()
-          .setTitle(carStatic.name)
+          .setTitle(car.name)
           .addFields(
-            { name: 'Rarity', value: carStatic.rarity || 'Unknown', inline: true },
-            { name: 'Rarity Level', value: String(carStatic.rarityLevel ?? '?'), inline: true },
+            { name: 'Total Serials', value: car.serials !== undefined ? car.serials.toString() : 'N/A', inline: true },
+            { name: 'Last Serial Dropped', value: formatDate(car.lastDrop), inline: true },
+            { name: 'Droppable', value: car.droppable ? 'YES' : 'NO', inline: true },
+            { name: 'Last Traded', value: formatDate(car.lastTraded), inline: true }
           )
           .setColor(0x007fff);
 
-        // Show a back button to return to the same page
+        // Back button
         const backRow = new ActionRowBuilder().addComponents(
           new ButtonBuilder()
             .setCustomId(`carinfo_back_${page}`)
@@ -109,17 +126,6 @@ module.exports = {
           content: '',
           embeds: [embed],
           components: [backRow],
-        });
-        return;
-      }
-      // Back to list
-      if (i.isButton() && i.customId.startsWith('carinfo_back_')) {
-        const prevPage = parseInt(i.customId.split('_').pop(), 10);
-        page = prevPage;
-        await i.update({
-          content: 'Select a car to view its info:',
-          components: getNavRow(page),
-          embeds: [],
         });
         return;
       }
