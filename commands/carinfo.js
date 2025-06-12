@@ -25,13 +25,9 @@ function formatDate(dateString) {
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('carinfo')
-    .setDescription('Select a car to view its serial and drop/trade info.'),
+    .setDescription('Select a car to view its drop/trade info.'),
   async execute(interaction) {
-    // Only allow this to be called for slash commands!
-    if (!interaction.isChatInputCommand()) {
-      // Ignore or optionally acknowledge component interactions here if accidentally routed.
-      return;
-    }
+    if (!interaction.isChatInputCommand()) return;
 
     let page = 0;
     const totalPages = getTotalPages();
@@ -63,7 +59,6 @@ module.exports = {
       return [row];
     }
 
-    // PUBLIC reply for channel
     await interaction.reply({
       content: 'Select a car to view its info:',
       components: getNavRow(page),
@@ -79,7 +74,6 @@ module.exports = {
 
     collector.on('collect', async i => {
       try {
-        // Pagination navigation
         if (i.isButton()) {
           if (i.customId === 'carinfo_prev' && page > 0) {
             page--;
@@ -110,7 +104,6 @@ module.exports = {
             return;
           }
         }
-        // Car selection
         if (i.isStringSelectMenu() && i.customId.startsWith('carinfo_select_')) {
           const carName = i.values[0];
           const car = cars.find(c => c.name === carName);
@@ -118,14 +111,12 @@ module.exports = {
           const embed = new EmbedBuilder()
             .setTitle(car.name)
             .addFields(
-              { name: 'Total Serials', value: car.serials !== undefined ? car.serials.toString() : 'N/A', inline: true },
               { name: 'Last Serial Dropped', value: formatDate(car.lastDrop), inline: true },
               { name: 'Droppable', value: car.droppable ? 'YES' : 'NO', inline: true },
               { name: 'Last Traded', value: formatDate(car.lastTraded), inline: true }
             )
             .setColor(0x007fff);
 
-          // Back button
           const backRow = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
               .setCustomId(`carinfo_back_${page}`)
@@ -140,9 +131,7 @@ module.exports = {
           });
           return;
         }
-      } catch (err) {
-        // Silent fail; interaction may be expired
-      }
+      } catch (err) {}
     });
 
     collector.on('end', async () => {
