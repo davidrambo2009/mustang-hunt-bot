@@ -110,13 +110,13 @@ module.exports = {
           const car = cars.find(c => c.name === carName);
 
           const embed = new EmbedBuilder()
-            .setTitle(car.name)
-            .addFields(
-              { name: 'Last Serial Dropped', value: formatDate(car.lastDrop), inline: true },
-              { name: 'Droppable', value: car.droppable ? 'YES' : 'NO', inline: true },
-              { name: 'Last Traded', value: formatDate(car.lastTraded), inline: true }
-            )
-            .setColor(0x007fff);
+  .setTitle(car.name)
+  .addFields(
+    { name: 'Rarity', value: car.rarity || "Unknown", inline: true },
+    { name: 'Droppable', value: car.droppable ? 'YES' : 'NO', inline: true },
+    { name: 'Last Traded', value: formatDate(car.lastTraded), inline: true }
+  )
+  .setColor(0x007fff);
 
           const backRow = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
