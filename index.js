@@ -556,17 +556,6 @@ client.on('interactionCreate', async (interaction) => {
       return;
     }
 
-    if (
-      (interaction.isButton() && (
-        interaction.customId === 'carinfo_prev' ||
-        interaction.customId === 'carinfo_next' ||
-        interaction.customId.startsWith('carinfo_back_')
-      )) ||
-      (interaction.isStringSelectMenu() && interaction.customId.startsWith('carinfo_select_'))
-    ) {
-      return carinfoCmd.execute(interaction);
-    }
-
   } catch (error) {
     log(`Interaction error: ${error}`);
     if (!interaction.replied && !interaction.deferred) {
