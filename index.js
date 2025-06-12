@@ -6,7 +6,7 @@ const { dropCar, getRarityEmoji, rarityColors } = require('./dropCar.js');
 const trade = require('./trade.js');
 const cars = require('./data/cars.js');
 const carinfoCmd = require('./commands/carinfo.js');
-const removecarCmd = require('./commands/removecar.js'); // <-- ADDED
+const removecarCmd = require('./commands/removecar.js');
 const {
   Client, GatewayIntentBits, EmbedBuilder,
   SlashCommandBuilder, PermissionFlagsBits, ActionRowBuilder,
@@ -294,7 +294,7 @@ client.once('ready', async () => {
     new SlashCommandBuilder().setName('trade').setDescription('List a car for trade (select from menu, then add a note)'),
     new SlashCommandBuilder().setName('canceltrade').setDescription('Cancel all your active trade listings'),
     new SlashCommandBuilder().setName('help').setDescription('Show help information for all commands'),
-    removecarCmd.data, // <-- ADDED
+    removecarCmd.data,
     carinfoCmd.data,
   ].map(cmd => cmd.toJSON());
 
@@ -309,8 +309,6 @@ client.once('ready', async () => {
     log('❌ Error registering slash commands: ' + e);
   }
 });
-
-// ...[unchanged code above]...
 
 client.on('interactionCreate', async (interaction) => {
   try {
@@ -571,16 +569,17 @@ client.on('interactionCreate', async (interaction) => {
       if (!garage) {
         return interaction.update({ content: 'Garage not found.', components: [], flags: 64 });
       }
-      const car = garage.cars.id(carId);
+      const car = garage.cars.find(c => c._id && c._id.toString() === carId);
       if (!car) {
         return interaction.update({ content: 'Car not found.', components: [], flags: 64 });
       }
 
       const { name, serial } = car;
-      car.remove();
+      // Remove the car from the array
+      garage.cars = garage.cars.filter(c => c._id.toString() !== carId);
       await garage.save();
 
-      // --- TODO: Add logic here to return serial to drop pool ---
+      // TODO: Add logic here to return serial to drop pool if needed
       log(`Serial ${serial} of ${name} returned to drop pool.`);
 
       await interaction.update({
