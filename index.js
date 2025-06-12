@@ -310,6 +310,8 @@ client.once('ready', async () => {
   }
 });
 
+// ...[unchanged code above]...
+
 client.on('interactionCreate', async (interaction) => {
   try {
     if (interaction.isChatInputCommand()) {
@@ -330,7 +332,7 @@ client.on('interactionCreate', async (interaction) => {
             { name: '/canceltrade', value: 'Cancel all your active trade listings.' },
             { name: '/help', value: 'Show this help message.' },
             { name: '/carinfo', value: 'Select a car and view its detailed info.' },
-            { name: '/removecar', value: 'Admin: Remove a car from a user’s garage.' } // <-- ADDED
+            { name: '/removecar', value: 'Admin: Remove a car from a user’s garage.' }
           )
           .setFooter({ text: 'Tip: Use /trade only in the trade-commands channel; listings appear in #trade-posts.' })
           .setColor(0x00BFFF);
@@ -342,7 +344,7 @@ client.on('interactionCreate', async (interaction) => {
       }
 
       if (commandName === 'removecar') {
-        return removecarCmd.execute(interaction); // <-- ADDED
+        return removecarCmd.execute(interaction);
       }
 
       if (commandName === 'claim') {
@@ -536,7 +538,8 @@ client.on('interactionCreate', async (interaction) => {
                 .setDescription('No cars found.')
                 .setColor(0x00BFFF)
             ],
-            components: []
+            components: [],
+            flags: 64
           });
         }
 
@@ -549,7 +552,7 @@ client.on('interactionCreate', async (interaction) => {
           interaction.user.id, garage, globalCount, pageIndex, userObj, garageOwnerId, cars
         );
 
-        await interaction.update({ embeds: [embed], components });
+        await interaction.update({ embeds: [embed], components, flags: 64 });
       } catch (error) {
         log(`DB ERROR in garage pagination: ${error}`);
         if (!interaction.replied && !interaction.deferred) {
@@ -566,11 +569,11 @@ client.on('interactionCreate', async (interaction) => {
 
       const garage = await Garage.findOne({ userId: targetUserId });
       if (!garage) {
-        return interaction.update({ content: 'Garage not found.', components: [], ephemeral: true });
+        return interaction.update({ content: 'Garage not found.', components: [], flags: 64 });
       }
       const car = garage.cars.id(carId);
       if (!car) {
-        return interaction.update({ content: 'Car not found.', components: [], ephemeral: true });
+        return interaction.update({ content: 'Car not found.', components: [], flags: 64 });
       }
 
       const { name, serial } = car;
@@ -583,7 +586,7 @@ client.on('interactionCreate', async (interaction) => {
       await interaction.update({
         content: `Removed ${name} (Serial ${serial}) from <@${targetUserId}>. Serial returned to the drop pool.`,
         components: [],
-        ephemeral: true
+        flags: 64
       });
       return;
     }
