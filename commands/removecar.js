@@ -15,12 +15,12 @@ module.exports = {
   async execute(interaction) {
     // Check admin (if not using default permissions)
     if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
-      return interaction.reply({ content: 'You must be an admin to use this command.', ephemeral: true });
+      return interaction.reply({ content: 'You must be an admin to use this command.', flags: 64 });
     }
     const targetUser = interaction.options.getUser('target');
     const garage = await Garage.findOne({ userId: targetUser.id });
     if (!garage || !garage.cars.length) {
-      return interaction.reply({ content: 'That user has no cars.', ephemeral: true });
+      return interaction.reply({ content: 'That user has no cars.', flags: 64 });
     }
 
     // Build select menu: each car as an option
@@ -39,7 +39,7 @@ module.exports = {
     await interaction.reply({
       content: `Select a car to remove from ${targetUser}'s garage:`,
       components: [row],
-      ephemeral: true
+      flags: 64
     });
   }
 };
