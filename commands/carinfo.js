@@ -1,5 +1,5 @@
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
-const cars = require('../data/cars.js'); // Adjust path if needed
+const cars = require('../data/cars.js');
 const Garage = require('../models/garage.js');
 
 const PAGE_SIZE = 25;
@@ -59,12 +59,12 @@ module.exports = {
       return [row];
     }
 
-   await interaction.reply({
-  content: 'Select a car to view its info:',
-  components: getNavRow(page),
-  allowedMentions: { repliedUser: false },
-  ephemeral: true // 👈 Add this line
-});
+    await interaction.reply({
+      content: 'Select a car to view its info:',
+      components: getNavRow(page),
+      allowedMentions: { repliedUser: false },
+      flags: 64 // Ephemeral/private to user
+    });
 
     const replyMsg = await interaction.fetchReply();
     const filter = i => i.user.id === interaction.user.id;
@@ -132,7 +132,9 @@ module.exports = {
           });
           return;
         }
-      } catch (err) {}
+      } catch (err) {
+        // Optionally handle/log error
+      }
     });
 
     collector.on('end', async () => {
