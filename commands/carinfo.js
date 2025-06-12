@@ -59,11 +59,12 @@ module.exports = {
       return [row];
     }
 
-    await interaction.reply({
-      content: 'Select a car to view its info:',
-      components: getNavRow(page),
-      allowedMentions: { repliedUser: false }
-    });
+   await interaction.reply({
+  content: 'Select a car to view its info:',
+  components: getNavRow(page),
+  allowedMentions: { repliedUser: false },
+  ephemeral: true // 👈 Add this line
+});
 
     const replyMsg = await interaction.fetchReply();
     const filter = i => i.user.id === interaction.user.id;
