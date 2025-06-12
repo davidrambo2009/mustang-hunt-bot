@@ -36,10 +36,21 @@ module.exports = {
 
     const row = new ActionRowBuilder().addComponents(menu);
 
-    await interaction.reply({
-      content: `Select a car to remove from ${targetUser}'s garage:`,
-      components: [row],
-      flags: 64
-    });
+    try {
+      await interaction.reply({
+        content: `Select a car to remove from ${targetUser}'s garage:`,
+        components: [row],
+        flags: 64
+      });
+    } catch (err) {
+      // Defensive: handle possible expired or already-responded interactions
+      if (!interaction.replied && !interaction.deferred) {
+        try {
+          await interaction.reply({ content: "❌ An error occurred.", flags: 64 });
+        } catch (e) {
+          // Ignore, since interaction may be invalid/expired
+        }
+      }
+    }
   }
 };
