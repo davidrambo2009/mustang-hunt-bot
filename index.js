@@ -6,6 +6,7 @@ const { dropCar, getRarityEmoji, rarityColors } = require('./dropCar.js');
 const trade = require('./trade.js');
 const cars = require('./data/cars.js');
 const carinfoCmd = require('./commands/carinfo.js');
+const removecarCmd = require('./commands/removecar.js'); // <-- ADDED
 const {
   Client, GatewayIntentBits, EmbedBuilder,
   SlashCommandBuilder, PermissionFlagsBits, ActionRowBuilder,
@@ -293,6 +294,7 @@ client.once('ready', async () => {
     new SlashCommandBuilder().setName('trade').setDescription('List a car for trade (select from menu, then add a note)'),
     new SlashCommandBuilder().setName('canceltrade').setDescription('Cancel all your active trade listings'),
     new SlashCommandBuilder().setName('help').setDescription('Show help information for all commands'),
+    removecarCmd.data, // <-- ADDED
     carinfoCmd.data,
   ].map(cmd => cmd.toJSON());
 
@@ -327,7 +329,8 @@ client.on('interactionCreate', async (interaction) => {
             { name: '/trade', value: `List a car from your garage for trade. **Use this command in <#${TRADE_COMMAND_CHANNEL_ID}>.** You'll select the car and can add a note. The listing will appear in <#${TRADE_POSTS_CHANNEL_ID}>.` },
             { name: '/canceltrade', value: 'Cancel all your active trade listings.' },
             { name: '/help', value: 'Show this help message.' },
-            { name: '/carinfo', value: 'Select a car and view its detailed info.' }
+            { name: '/carinfo', value: 'Select a car and view its detailed info.' },
+            { name: '/removecar', value: 'Admin: Remove a car from a user’s garage.' } // <-- ADDED
           )
           .setFooter({ text: 'Tip: Use /trade only in the trade-commands channel; listings appear in #trade-posts.' })
           .setColor(0x00BFFF);
@@ -336,6 +339,10 @@ client.on('interactionCreate', async (interaction) => {
 
       if (commandName === 'carinfo') {
         return carinfoCmd.execute(interaction);
+      }
+
+      if (commandName === 'removecar') {
+        return removecarCmd.execute(interaction); // <-- ADDED
       }
 
       if (commandName === 'claim') {
@@ -551,6 +558,36 @@ client.on('interactionCreate', async (interaction) => {
       }
       return;
     }
+
+    // --- removecar select menu handler ---
+    if (interaction.isStringSelectMenu() && interaction.customId.startsWith('removecar_select_')) {
+      const targetUserId = interaction.customId.split('_')[2];
+      const carId = interaction.values[0];
+
+      const garage = await Garage.findOne({ userId: targetUserId });
+      if (!garage) {
+        return interaction.update({ content: 'Garage not found.', components: [], ephemeral: true });
+      }
+      const car = garage.cars.id(carId);
+      if (!car) {
+        return interaction.update({ content: 'Car not found.', components: [], ephemeral: true });
+      }
+
+      const { name, serial } = car;
+      car.remove();
+      await garage.save();
+
+      // --- TODO: Add logic here to return serial to drop pool ---
+      log(`Serial ${serial} of ${name} returned to drop pool.`);
+
+      await interaction.update({
+        content: `Removed ${name} (Serial ${serial}) from <@${targetUserId}>. Serial returned to the drop pool.`,
+        components: [],
+        ephemeral: true
+      });
+      return;
+    }
+    // --- end removecar select menu handler ---
 
   } catch (error) {
     log(`Interaction error: ${error}`);
