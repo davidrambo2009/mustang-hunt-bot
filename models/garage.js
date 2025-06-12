@@ -5,4 +5,5 @@ const garageSchema = new mongoose.Schema({
   cars: [{ name: String, serial: Number }]
 });
 
-module.exports = mongoose.model('Garage', garageSchema);
+// Check if the model is already compiled (prevents OverwriteModelError)
+module.exports = mongoose.models.Garage || mongoose.model('Garage', garageSchema);
