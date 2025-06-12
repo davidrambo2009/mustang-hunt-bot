@@ -1,5 +1,5 @@
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
-const cars = require('../data/cars.js'); // Adjust path as needed
+const cars = require('../data/cars.js'); // Adjust path if needed
 
 const PAGE_SIZE = 25;
 
@@ -56,14 +56,12 @@ module.exports = {
       return [row];
     }
 
-    // Send the initial reply, ephemeral
+    // PUBLIC reply for channel
     await interaction.reply({
       content: 'Select a car to view its info:',
       components: getNavRow(page),
-      flags: 64,
     });
 
-    // Fetch the reply message for correct collector binding
     const replyMsg = await interaction.fetchReply();
 
     const filter = i => i.user.id === interaction.user.id;
@@ -94,7 +92,6 @@ module.exports = {
             });
             return;
           }
-          // Back to list
           if (i.customId.startsWith('carinfo_back_')) {
             const prevPage = parseInt(i.customId.split('_').pop(), 10);
             page = prevPage;
