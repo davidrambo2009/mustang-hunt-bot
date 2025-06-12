@@ -26,6 +26,12 @@ module.exports = {
     .setName('carinfo')
     .setDescription('Select a car to view its serial and drop/trade info.'),
   async execute(interaction) {
+    // Only allow this to be called for slash commands!
+    if (!interaction.isChatInputCommand()) {
+      // Ignore or optionally acknowledge component interactions here if accidentally routed.
+      return;
+    }
+
     let page = 0;
     const totalPages = getTotalPages();
 
@@ -60,10 +66,10 @@ module.exports = {
     await interaction.reply({
       content: 'Select a car to view its info:',
       components: getNavRow(page),
+      allowedMentions: { repliedUser: false }
     });
 
     const replyMsg = await interaction.fetchReply();
-
     const filter = i => i.user.id === interaction.user.id;
     const collector = replyMsg.createMessageComponentCollector({
       filter,
