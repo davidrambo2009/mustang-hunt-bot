@@ -37,11 +37,7 @@ const TRADE_COMMAND_CHANNEL_ID = '1374623379406979134';
 const TRADE_HISTORY_CHANNEL_ID = '1381780373192573019';
 const GUILD_ID = '1370450475400302686';
 
-const garageSchema = new mongoose.Schema({
-  userId: String,
-  cars: [{ name: String, serial: Number }]
-});
-const Garage = mongoose.model('Garage', garageSchema);
+const Garage = require('./models/garage');
 
 const tradeListingSchema = new mongoose.Schema({
   userId: String,
