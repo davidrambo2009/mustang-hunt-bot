@@ -288,6 +288,26 @@ client.once('ready', async () => {
   const commands = [
     new SlashCommandBuilder().setName('claim').setDescription('Claim the currently dropped car'),
     new SlashCommandBuilder().setName('drop').setDescription('Force a drop').setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+    new SlashCommandBuilder().setName('dropbyrarity')
+      .setDescription('Drop a random car of a specific rarity')
+      .addStringOption(opt =>
+        opt.setName('rarity')
+          .setDescription('Car rarity (e.g., Godly, Rare, Epic)')
+          .setRequired(true)
+          .addChoices(
+            { name: '???', value: '???' },
+            { name: 'Godly', value: 'Godly' },
+            { name: 'Ultra Mythic', value: 'Ultra Mythic' },
+            { name: 'Mythic', value: 'Mythic' },
+            { name: 'Legendary', value: 'Legendary' },
+            { name: 'Epic', value: 'Epic' },
+            { name: 'Rare', value: 'Rare' },
+            { name: 'Uncommon', value: 'Uncommon' },
+            { name: 'Common', value: 'Common' },
+            { name: 'LIMITED EVENT', value: 'LIMITED EVENT' }
+          )
+      )
+      .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
     new SlashCommandBuilder().setName('garage').setDescription('View a garage').addUserOption(opt => opt.setName('user').setDescription('User to view')),
     new SlashCommandBuilder().setName('resetgarage').setDescription("Reset a user's garage").addUserOption(opt => opt.setName('user').setDescription('User').setRequired(true)).setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
     new SlashCommandBuilder().setName('stats').setDescription('View bot stats'),
@@ -323,10 +343,11 @@ client.on('interactionCreate', async (interaction) => {
           .addFields(
             { name: '/claim', value: 'Claim the currently dropped car. Only works when a drop is active. Cooldown applies.' },
             { name: '/drop', value: 'Force a car drop. **Administrator only.**' },
+            { name: '/dropbyrarity <rarity>', value: 'Force-drop a car of the specified rarity. **Administrator only.**' },
             { name: '/garage [user]', value: `View your garage or another user's garage. Only works in <#${GARAGE_CHANNEL_ID}>.` },
             { name: '/resetgarage <user>', value: 'Reset a user\'s garage. **Administrator only.**' },
             { name: '/stats', value: 'View bot statistics (users, cars, uptime).' },
-            { name: '/trade', value: `List a car from your garage for trade. **Use this command in <#${TRADE_COMMAND_CHANNEL_ID}>.** You'll select the car and can add a note. The listing will appear in <#${TRADE_POSTS_CHANNEL_ID}>.` },
+            { name: '/trade', value: `List a car from your garage for trade. **Use this command in <#${TRADE_COMMAND_CHANNEL_ID}>.** You'll select the car and can add a note. The listing will appear in #trade-posts.` },
             { name: '/canceltrade', value: 'Cancel all your active trade listings.' },
             { name: '/help', value: 'Show this help message.' },
             { name: '/carinfo', value: 'Select a car and view its detailed info.' },
@@ -335,6 +356,29 @@ client.on('interactionCreate', async (interaction) => {
           .setFooter({ text: 'Tip: Use /trade only in the trade-commands channel; listings appear in #trade-posts.' })
           .setColor(0x00BFFF);
         return interaction.reply({ embeds: [embed], flags: 64 });
+      }
+
+      if (commandName === 'dropbyrarity') {
+        if (!member.permissions.has(PermissionFlagsBits.Administrator)) {
+          return interaction.reply({ content: '❌ No permission.', flags: 64 });
+        }
+        const rarity = options.getString('rarity');
+        // Filter cars by the specified rarity
+        const carsOfRarity = cars.filter(car => car.rarity === rarity);
+        if (!carsOfRarity.length) {
+          return interaction.reply({ content: `❌ No cars found with rarity "${rarity}".`, flags: 64 });
+        }
+        // Pick a random car of that rarity
+        const car = carsOfRarity[Math.floor(Math.random() * carsOfRarity.length)];
+        try {
+          dropCar(channel, () => car, scheduleNextDrop, dropState);
+          return interaction.reply({ content: `🚗 Dropped a random **${rarity}** car!`, flags: 64 });
+        } catch (error) {
+          log(`ERROR in /dropbyrarity: ${error}`);
+          if (!interaction.replied && !interaction.deferred) {
+            return interaction.reply({ content: '❌ An error occurred dropping the car.', flags: 64 });
+          }
+        }
       }
 
       if (commandName === 'carinfo') {
