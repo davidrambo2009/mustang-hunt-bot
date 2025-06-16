@@ -69,8 +69,19 @@ const nascarUnlockCar = '2022 Mustang NASCAR Cup Car';
 const requiredForNascar = ['2024 Mustang GT3', '2024 Mustang GT4', '2025 Mustang GTD'];
 
 function getChanceFromRarity(level) {
-  if (level === 0) return 0;
-  return 1 / Math.pow(2, level - 1);
+  const weights = {
+    1: 1,      // Common
+    2: 0.8,    // Uncommon
+    3: 0.7,    // Rare
+    4: 0.6,    // Epic
+    5: 0.5,    // Legendary
+    6: 0.45,   // Mythic
+    7: 0.4,    // Ultra Mythic
+    8: 0.3,    // Godly
+    9: 0.2,    // ???
+    10: 0,     // LIMITED EVENT (CANNOT DROP)
+  };
+  return weights[level] || 0;
 }
 
 function getRarityTag(car) {
