@@ -1,4 +1,10 @@
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { 
+  SlashCommandBuilder, 
+  EmbedBuilder, 
+  ActionRowBuilder, 
+  ButtonBuilder, 
+  ButtonStyle 
+} = require('discord.js');
 const { createShop } = require('../shop/shopManager');
 
 // Add rarity emojis
@@ -82,7 +88,7 @@ module.exports = {
 
     const embed = new EmbedBuilder()
       .setTitle('🛒 Mustang Hunt Shop')
-      .setDescription('Check out today’s featured and daily deals!')
+      .setDescription('Check out today’s featured and daily deals!\nClick the Buy button for the item you want!')
       .setColor(0x2ECC71) // Vibrant green
       .addFields(
         { name: '🌟 Featured Items 🌟', value: featuredText },
@@ -91,6 +97,37 @@ module.exports = {
       //.setThumbnail('https://cdn.discordapp.com/icons/yourguildid/shopicon.png') // Optional
       .setFooter({ text: footer });
 
-    await interaction.reply({ embeds: [embed], flags: 64 });
+    // === BUTTONS ===
+    const components = [];
+
+    // Featured Items (row 1)
+    if (shop.featured.length) {
+      const featuredRow = new ActionRowBuilder();
+      shop.featured.forEach((item, idx) => {
+        featuredRow.addComponents(
+          new ButtonBuilder()
+            .setCustomId(`buy_featured_${idx}`)
+            .setLabel(`Buy: ${item.name}`)
+            .setStyle(ButtonStyle.Primary)
+        );
+      });
+      components.push(featuredRow);
+    }
+
+    // Daily Items (row 2)
+    if (shop.daily.length) {
+      const dailyRow = new ActionRowBuilder();
+      shop.daily.forEach((item, idx) => {
+        dailyRow.addComponents(
+          new ButtonBuilder()
+            .setCustomId(`buy_daily_${idx}`)
+            .setLabel(`Buy: ${item.name}`)
+            .setStyle(ButtonStyle.Primary)
+        );
+      });
+      components.push(dailyRow);
+    }
+
+    await interaction.reply({ embeds: [embed], components, ephemeral: true }); // ephemeral = only visible to the user
   },
 };
