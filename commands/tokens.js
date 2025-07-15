@@ -13,7 +13,7 @@ module.exports = {
     if (interaction.channel.id !== GARAGE_CHANNEL_ID) {
       return interaction.reply({
         content: '❌ You can only use `/tokens` in the garage channel!',
-        ephemeral: true
+        flags: 64
       });
     }
 
@@ -27,7 +27,6 @@ module.exports = {
       .setTitle('🏅 Hunt Tokens')
       .setDescription(`You have **${tokens}** Hunt Tokens.\n\nBooster: ${isBoosting ? '🟢 Active (2x tokens)' : '🔴 Not Active'}`)
       .setColor(isBoosting ? 0x00FF00 : 0xFF0000);
-    await interaction.reply({
-  embeds: [embed],
-  flags: 64
-});
+    await interaction.reply({ embeds: [embed], flags: 64 });
+  }
+};
