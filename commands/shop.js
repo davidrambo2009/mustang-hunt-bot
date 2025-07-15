@@ -60,7 +60,7 @@ module.exports = {
   async execute(interaction) {
     const shop = createShop();
 
-    // Show expiry next to any event featured item
+    // Format featured and daily items for the embed
     const featuredText = shop.featured.length
       ? shop.featured.map(item => {
           let line = `• **${item.name}** [${formatRarity(item.rarity)}] — \`${item.price} coins\``;
@@ -77,11 +77,10 @@ module.exports = {
         ).join('\n')
       : 'No daily items today!';
 
-    // If there are any expiring featured items, make it extra clear in the footer!
+    // Footer for shop refresh and event expiry
     let footer = getShopRefreshText();
     const expiring = shop.featured.filter(item => item.expiresAt);
     if (expiring.length) {
-      // Find the latest expiration for summary
       const soonest = expiring.map(i => i.expiresAt).sort()[0];
       footer += ` | LIMITED EVENT items available until ${formatExpiryET(soonest)}`;
     }
@@ -89,7 +88,7 @@ module.exports = {
     const embed = new EmbedBuilder()
       .setTitle('🛒 Mustang Hunt Shop')
       .setDescription('Check out today’s featured and daily deals!\nClick the Buy button for the item you want!')
-      .setColor(0x2ECC71) // Vibrant green
+      .setColor(0x2ECC71)
       .addFields(
         { name: '🌟 Featured Items 🌟', value: featuredText },
         { name: '🛒 Daily Items 🛒', value: dailyText }
@@ -98,36 +97,35 @@ module.exports = {
       .setFooter({ text: footer });
 
     // === BUTTONS ===
+    // Combine all shop items, track which section (featured/daily) and index
+    const allShopItems = [
+      ...shop.featured.map((item, idx) => ({
+        ...item,
+        section: 'featured',
+        sectionIdx: idx
+      })),
+      ...shop.daily.map((item, idx) => ({
+        ...item,
+        section: 'daily',
+        sectionIdx: idx
+      }))
+    ];
+
+    // Split buttons into chunks of 5 (max per row)
     const components = [];
-
-    // Featured Items (row 1)
-    if (shop.featured.length) {
-      const featuredRow = new ActionRowBuilder();
-      shop.featured.forEach((item, idx) => {
-        featuredRow.addComponents(
+    for (let i = 0; i < allShopItems.length; i += 5) {
+      const row = new ActionRowBuilder();
+      allShopItems.slice(i, i + 5).forEach((item) => {
+        row.addComponents(
           new ButtonBuilder()
-            .setCustomId(`buy_featured_${idx}`)
+            .setCustomId(`buy_${item.section}_${item.sectionIdx}`)
             .setLabel(`Buy: ${item.name}`)
             .setStyle(ButtonStyle.Primary)
         );
       });
-      components.push(featuredRow);
+      components.push(row);
     }
 
-    // Daily Items (row 2)
-    if (shop.daily.length) {
-      const dailyRow = new ActionRowBuilder();
-      shop.daily.forEach((item, idx) => {
-        dailyRow.addComponents(
-          new ButtonBuilder()
-            .setCustomId(`buy_daily_${idx}`)
-            .setLabel(`Buy: ${item.name}`)
-            .setStyle(ButtonStyle.Primary)
-        );
-      });
-      components.push(dailyRow);
-    }
-
-    await interaction.reply({ embeds: [embed], components, ephemeral: true }); // ephemeral = only visible to the user
+    await interaction.reply({ embeds: [embed], components, flags: 64 });
   },
 };
