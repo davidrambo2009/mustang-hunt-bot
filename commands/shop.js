@@ -1,5 +1,5 @@
-const { SlashCommandBuilder } = require('discord.js');
-const { createShop } = require('../shop/shopManager'); // adjust to your path if needed
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { createShop } = require('../shop/shopManager'); // adjust path if needed
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -8,21 +8,30 @@ module.exports = {
   async execute(interaction) {
     const shop = createShop();
 
-    // Format featured items
-    let featuredText = "**🌟 Featured Items 🌟**\n";
-    shop.featured.forEach(item => {
-      featuredText += `• ${item.name} [${item.rarity}] — ${item.price} coins\n`;
-    });
+    // Format featured and daily items
+    const featuredText = shop.featured.length
+      ? shop.featured.map(item =>
+          `• **${item.name}** [${item.rarity}] — \`${item.price} coins\``
+        ).join('\n')
+      : 'No featured items today!';
 
-    // Format daily items
-    let dailyText = "\n**🛒 Daily Items 🛒**\n";
-    shop.daily.forEach(item => {
-      dailyText += `• ${item.name} [${item.rarity}] — ${item.price} coins\n`;
-    });
+    const dailyText = shop.daily.length
+      ? shop.daily.map(item =>
+          `• **${item.name}** [${item.rarity}] — \`${item.price} coins\``
+        ).join('\n')
+      : 'No daily items today!';
 
-    await interaction.reply({
-      content: `${featuredText}${dailyText}`,
-      flags: 64 // Always use flags: 64 for ephemeral replies
-    });
+    const embed = new EmbedBuilder()
+      .setTitle('🛒 Mustang Hunt Shop')
+      .setDescription('Check out today’s featured and daily deals!')
+      .setColor(0x2ECC71) // Vibrant green
+      .addFields(
+        { name: '🌟 Featured Items 🌟', value: featuredText },
+        { name: '🛒 Daily Items 🛒', value: dailyText }
+      )
+      //.setThumbnail('https://cdn.discordapp.com/icons/yourguildid/shopicon.png') // Optional: put your icon URL here
+      .setFooter({ text: 'Shop refreshes daily!' });
+
+    await interaction.reply({ embeds: [embed], flags: 64 });
   },
 };
