@@ -8,6 +8,7 @@ const cars = require('./data/cars.js');
 const carinfoCmd = require('./commands/carinfo.js');
 const removecarCmd = require('./commands/removecar.js');
 const { addTokens } = require('./data/tokenHelper.js');
+const tokensCmd = require('./commands/tokens.js');
 const {
   Client, GatewayIntentBits, EmbedBuilder,
   SlashCommandBuilder, PermissionFlagsBits, ActionRowBuilder,
@@ -328,6 +329,7 @@ client.once('ready', async () => {
     new SlashCommandBuilder().setName('help').setDescription('Show help information for all commands'),
     removecarCmd.data,
     carinfoCmd.data,
+    tokensCmd.data,
   ].map(cmd => cmd.toJSON());
 
   try {
@@ -394,12 +396,14 @@ client.on('interactionCreate', async (interaction) => {
       }
 
       if (commandName === 'carinfo') {
-        return carinfoCmd.execute(interaction);
-      }
-
-      if (commandName === 'removecar') {
-        return removecarCmd.execute(interaction);
-      }
+  return carinfoCmd.execute(interaction);
+}
+if (commandName === 'removecar') {
+  return removecarCmd.execute(interaction);
+}
+if (commandName === 'tokens') {
+  return tokensCmd.execute(interaction);
+}
 
       if (commandName === 'claim') {
         const now = Date.now();
