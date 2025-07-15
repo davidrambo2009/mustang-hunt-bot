@@ -9,6 +9,7 @@ const carinfoCmd = require('./commands/carinfo.js');
 const removecarCmd = require('./commands/removecar.js');
 const { addTokens } = require('./data/tokenHelper.js');
 const tokensCmd = require('./commands/tokens.js');
+const shopCmd = require('./commands/shop.js');
 const {
   Client, GatewayIntentBits, EmbedBuilder,
   SlashCommandBuilder, PermissionFlagsBits, ActionRowBuilder,
