@@ -22,7 +22,7 @@ module.exports = {
 
     await interaction.reply({
       content: `${featuredText}${dailyText}`,
-      ephemeral: true // Only the user sees it; set to false if you want public
+      flags: 64 // Always use flags: 64 for ephemeral replies
     });
   },
 };
