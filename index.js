@@ -331,6 +331,7 @@ client.once('ready', async () => {
     removecarCmd.data,
     carinfoCmd.data,
     tokensCmd.data,
+    shopCmd.data,
   ].map(cmd => cmd.toJSON());
 
   try {
