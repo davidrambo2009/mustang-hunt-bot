@@ -22,4 +22,14 @@ async function addTokens(userId, baseAmount, isBoosting = false) {
   return garage.tokens;
 }
 
-module.exports = { addTokens };
+/**
+ * Gets the Hunt Token balance for a user.
+ * @param {String} userId - Discord user ID
+ * @returns {Promise<Number>} - The number of tokens, or 0 if none found
+ */
+async function getTokens(userId) {
+  const garage = await Garage.findOne({ userId });
+  return garage && typeof garage.tokens === "number" ? garage.tokens : 0;
+}
+
+module.exports = { addTokens, getTokens };
