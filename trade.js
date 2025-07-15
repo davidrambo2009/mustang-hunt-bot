@@ -1,3 +1,4 @@
+const { addTokens } = require('./data/tokenHelper.js');
 const {
   EmbedBuilder,
   ActionRowBuilder,
@@ -563,6 +564,22 @@ async function handleOfferButton(interaction, TRADE_POSTS_CHANNEL_ID, TRADEOFFER
 
       await fromGarage.save();
       await toGarage.save();
+
+            await fromGarage.save();
+      await toGarage.save();
+
+      // Award Hunt Tokens to both users for a successful trade
+      const boosterRoleId = '1392720458960339005';
+      const guild = interaction.guild;
+      const fromMember = await guild.members.fetch(offer.fromUserId).catch(() => null);
+      const toMember = await guild.members.fetch(offer.toUserId).catch(() => null);
+      const isBoostingFrom = fromMember ? fromMember.roles.cache.has(boosterRoleId) : false;
+      const isBoostingTo = toMember ? toMember.roles.cache.has(boosterRoleId) : false;
+      await addTokens(offer.fromUserId, 1, isBoostingFrom);
+      await addTokens(offer.toUserId, 1, isBoostingTo);
+
+      // --- FINALIZED PATCH: always update or delete the trade post after trade completion ---
+      const listing = await TradeListing.findOne({ 'car.name': offer.requestedCar.name, 'car.serial': offer.requestedCar.serial });
 
       // --- FINALIZED PATCH: always update or delete the trade post after trade completion ---
       const listing = await TradeListing.findOne({ 'car.name': offer.requestedCar.name, 'car.serial': offer.requestedCar.serial });
