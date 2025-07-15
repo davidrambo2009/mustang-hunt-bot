@@ -27,6 +27,7 @@ module.exports = {
       .setTitle('🏅 Hunt Tokens')
       .setDescription(`You have **${tokens}** Hunt Tokens.\n\nBooster: ${isBoosting ? '🟢 Active (2x tokens)' : '🔴 Not Active'}`)
       .setColor(isBoosting ? 0x00FF00 : 0xFF0000);
-    await interaction.reply({ embeds: [embed], ephemeral: true });
-  }
-};
+    await interaction.reply({
+  embeds: [embed],
+  flags: 64
+});
