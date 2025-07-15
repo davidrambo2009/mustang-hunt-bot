@@ -406,6 +406,9 @@ if (commandName === 'removecar') {
 if (commandName === 'tokens') {
   return tokensCmd.execute(interaction);
 }
+      if (commandName === 'shop') {
+  return shopCmd.execute(interaction);
+}
 
       if (commandName === 'claim') {
         const now = Date.now();
