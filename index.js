@@ -7,6 +7,7 @@ const trade = require('./trade.js');
 const cars = require('./data/cars.js');
 const carinfoCmd = require('./commands/carinfo.js');
 const removecarCmd = require('./commands/removecar.js');
+const { addTokens } = require('./data/tokenHelper.js');
 const {
   Client, GatewayIntentBits, EmbedBuilder,
   SlashCommandBuilder, PermissionFlagsBits, ActionRowBuilder,
@@ -451,10 +452,16 @@ client.on('interactionCreate', async (interaction) => {
             await channel.send(`🎉 ${user.username} unlocked **${nascarUnlockCar}**!`);
           }
 
-          await garage.save();
-          dropState.activeDrop = null;
-          scheduleNextDrop(channel);
-          await interaction.reply({ content: '✅ You claimed the car!', flags: 64 });
+         await garage.save();
+
+// Award Hunt Tokens for claiming a car
+const boosterRoleId = '1392720458960339005';
+const isBoosting = member.roles.cache.has(boosterRoleId);
+await addTokens(userId, 1, isBoosting);
+
+dropState.activeDrop = null;
+scheduleNextDrop(channel);
+await interaction.reply({ content: '✅ You claimed the car!', flags: 64 });
         } catch (error) {
           log(`DB ERROR in /claim: ${error}`);
           if (!interaction.replied && !interaction.deferred) {
