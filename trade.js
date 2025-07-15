@@ -582,7 +582,7 @@ async function handleOfferButton(interaction, TRADE_POSTS_CHANNEL_ID, TRADEOFFER
       const listing = await TradeListing.findOne({ 'car.name': offer.requestedCar.name, 'car.serial': offer.requestedCar.serial });
 
       // --- FINALIZED PATCH: always update or delete the trade post after trade completion ---
-      const listing = await TradeListing.findOne({ 'car.name': offer.requestedCar.name, 'car.serial': offer.requestedCar.serial });
+      
       let listingMsg = null;
       if (listing) {
         listing.active = false;
