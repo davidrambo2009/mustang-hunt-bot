@@ -14,6 +14,9 @@ const garageSchema = new mongoose.Schema({
   // Number of tokens the user has
   tokens: { type: Number, default: 0 },
 
+  // Number of coins the user has (for shop purchases)
+  coins: { type: Number, default: 0 }, // <-- ADDED
+
   // Titles
   ownedTitles:    { type: [String], default: [] },
   equippedTitle:  { type: String, default: "" },
