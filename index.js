@@ -140,11 +140,15 @@ function renderGaragePage(viewerId, garage, globalCount, pageIndex, garageOwnerU
   if (pageIndex < 0) pageIndex = 0;
   if (pageIndex > pages.length - 1) pageIndex = pages.length - 1;
 
-  // Get visuals for equipped theme/title
-  const equippedTheme = garage.equippedTheme || "Garage Theme: Plain White";
+  // ---- THEME LOGIC ----
+  const equippedTheme = garage.equippedTheme?.trim() || "Garage Theme: Plain White";
   const themeDesign = garageVisuals?.themes?.[equippedTheme] || garageVisuals?.themes?.["Garage Theme: Plain White"] || {};
   const embedColor = themeDesign.color || 0x00BFFF;
   const embedEmoji = themeDesign.emoji || "🚗";
+  // ---- DEBUG ----
+  console.log("equippedTheme:", equippedTheme);
+  console.log("themeDesign:", themeDesign);
+  console.log("embedColor:", embedColor);
 
   if (!pages.length || !pages[pageIndex]) {
     const embed = new EmbedBuilder()
@@ -153,9 +157,19 @@ function renderGaragePage(viewerId, garage, globalCount, pageIndex, garageOwnerU
         : `${garageOwnerUser.username}'s Garage`}`)
       .setDescription('No cars found.')
       .setColor(embedColor);
+    // ---- TITLE LOGIC ----
+    const equippedTitle = garage.equippedTitle?.trim();
+    const titleObj = garageVisuals.titles[equippedTitle];
+    console.log("equippedTitle:", equippedTitle);
+    console.log("titleObj:", titleObj);
+    if (equippedTitle && titleObj) {
+      embed.setAuthor({
+        name: `${titleObj.emoji} ${equippedTitle.replace("Title: ", "")}`,
+        iconURL: garageOwnerUser.displayAvatarURL()
+      });
+    }
     return { embed, components: [] };
   }
-
   const rarityOrder = [
     "???", "Godly", "Ultra Mythic", "Mythic", "Legendary", "Epic", "Rare", "Uncommon", "Common", "LIMITED EVENT"
   ];
@@ -202,6 +216,18 @@ function renderGaragePage(viewerId, garage, globalCount, pageIndex, garageOwnerU
       : `${garageOwnerUser.username}'s Garage - Page ${pageIndex + 1}/${pages.length}`}`)
     .setDescription(list.length ? list : 'No cars found.')
     .setColor(embedColor);
+
+  // ---- TITLE LOGIC ----
+ const equippedTitle = garage.equippedTitle?.trim();
+  const titleObj = garageVisuals.titles[equippedTitle];
+  console.log("equippedTitle:", equippedTitle);
+  console.log("titleObj:", titleObj);
+  if (equippedTitle && titleObj) {
+    embed.setAuthor({
+      name: `${titleObj.emoji} ${equippedTitle.replace("Title: ", "")}`,
+      iconURL: garageOwnerUser.displayAvatarURL()
+    });
+  }
 
   const row = new ActionRowBuilder();
   if (pageIndex > 0)
