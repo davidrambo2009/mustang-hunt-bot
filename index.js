@@ -569,16 +569,15 @@ if (interaction.commandName === 'equiptitle') {
     garage.cars = garage.cars.filter(c => c && c.name);
 
     const all = await Garage.find();
-    const globalCount = calculateGlobalCounts(all);
-    const pageIndex = 0; // Always start at page 0 for /garage command
-    const userObj = await client.users.fetch(target.id);
+const globalCount = calculateGlobalCounts(all);
+const pageIndex = 0;
+const userObj = await client.users.fetch(target.id);
 
-    // Use your updated renderGaragePage function!
-    const { embed, components } = renderGaragePage(
-      user.id, garage, globalCount, pageIndex, userObj, target.id, cars
-    );
+const { embed, components } = renderGaragePage(
+  user.id, garage, globalCount, pageIndex, userObj, target.id, cars
+);
 
-    await interaction.reply({ embeds: [embed], components, flags: 64 });
+await interaction.reply({ embeds: [embed], components, flags: 64 });
   } catch (error) {
     log(`DB ERROR in /garage: ${error}`);
     if (!interaction.replied && !interaction.deferred) {
