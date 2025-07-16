@@ -141,24 +141,12 @@ function renderGaragePage(viewerId, garage, globalCount, pageIndex, garageOwnerU
   if (pageIndex > pages.length - 1) pageIndex = pages.length - 1;
 
   if (!pages.length || !pages[pageIndex]) {
-    // Use visuals even if empty
-    const equippedTheme = garage.equippedTheme || "Garage Theme: Plain White";
-    const equippedTitle = garage.equippedTitle || "None";
-    const themeDesign = garageVisuals.themes[equippedTheme] || garageVisuals.themes["Garage Theme: Plain White"];
-    const titleDesign = garageVisuals.titles[equippedTitle] || {};
-    const titleDisplay = titleDesign.emoji ? `${titleDesign.emoji} ${equippedTitle}` : equippedTitle;
-
     const embed = new EmbedBuilder()
-      .setTitle(`${themeDesign.emoji} ${viewerId === garageOwnerId
-        ? `Your Garage (0 cars)`
-        : `${garageOwnerUser.username}'s Garage`}`)
-      .setDescription(
-        `**Equipped Title:** ${titleDisplay}\n` +
-        `**Equipped Theme:** ${equippedTheme}\n\n` +
-        'No cars found.'
-      )
-      .setColor(themeDesign.color)
-      .setFooter({ text: themeDesign.description });
+      .setTitle(viewerId === garageOwnerId
+        ? `🚗 Your Garage (0 cars)`
+        : `🚗 ${garageOwnerUser.username}'s Garage`)
+      .setDescription('No cars found.')
+      .setColor(0x00BFFF);
     return { embed, components: [] };
   }
 
@@ -178,7 +166,6 @@ function renderGaragePage(viewerId, garage, globalCount, pageIndex, garageOwnerU
     };
   });
 
-  // Car grouping by rarity
   const grouped = {};
   for (const rarity of rarityOrder) grouped[rarity] = [];
   for (const car of carsOnPage) {
@@ -203,26 +190,13 @@ function renderGaragePage(viewerId, garage, globalCount, pageIndex, garageOwnerU
   }
   list = list.trim();
 
-  // Patch: Use visuals for color/title/footer
-  const equippedTheme = garage.equippedTheme || "Garage Theme: Plain White";
-  const equippedTitle = garage.equippedTitle || "None";
-  const themeDesign = garageVisuals.themes[equippedTheme] || garageVisuals.themes["Garage Theme: Plain White"];
-  const titleDesign = garageVisuals.titles[equippedTitle] || {};
-  const titleDisplay = titleDesign.emoji ? `${titleDesign.emoji} ${equippedTitle}` : equippedTitle;
-
   const embed = new EmbedBuilder()
-    .setTitle(`${themeDesign.emoji} ${viewerId === garageOwnerId
-      ? `Your Garage (${garage.cars.length} cars) - Page ${pageIndex + 1}/${pages.length}`
-      : `${garageOwnerUser.username}'s Garage - Page ${pageIndex + 1}/${pages.length}`}`)
-    .setColor(themeDesign.color)
-    .setDescription(
-      `**Equipped Title:** ${titleDisplay}\n` +
-      `**Equipped Theme:** ${equippedTheme}\n\n` +
-      (list.length ? list : 'No cars found.')
-    )
-    .setFooter({ text: themeDesign.description });
+    .setTitle(viewerId === garageOwnerId
+      ? `🚗 Your Garage (${garage.cars.length} cars) - Page ${pageIndex + 1}/${pages.length}`
+      : `🚗 ${garageOwnerUser.username}'s Garage - Page ${pageIndex + 1}/${pages.length}`)
+    .setDescription(list.length ? list : 'No cars found.')
+    .setColor(0x00BFFF);
 
-  // Pagination buttons
   const row = new ActionRowBuilder();
   if (pageIndex > 0)
     row.addComponents(
@@ -241,6 +215,7 @@ function renderGaragePage(viewerId, garage, globalCount, pageIndex, garageOwnerU
 
   return { embed, components: row.components.length ? [row] : [] };
 }
+
 let dropState = { activeDrop: null, dropTimeout: null };
 const claimingUsers = new Set();
 const claimCooldowns = new Map();
@@ -561,12 +536,21 @@ if (interaction.commandName === 'equiptitle') {
 
     garage.cars = garage.cars.filter(c => c && c.name);
 
-    // --- NEW: Visuals for theme/title ---
+    // --- Visuals for theme/title ---
     const equippedTheme = garage.equippedTheme || "Garage Theme: Plain White";
     const equippedTitle = garage.equippedTitle || "None";
     const themeDesign = garageVisuals.themes[equippedTheme] || garageVisuals.themes["Garage Theme: Plain White"];
     const titleDesign = garageVisuals.titles[equippedTitle] || {};
     const titleDisplay = titleDesign.emoji ? `${titleDesign.emoji} ${equippedTitle}` : equippedTitle;
+
+    // Owned lists
+    const ownedThemes = (garage.ownedThemes && garage.ownedThemes.length)
+      ? garage.ownedThemes.map(t => `• ${t}`).join('\n')
+      : "None owned";
+
+    const ownedTitles = (garage.ownedTitles && garage.ownedTitles.length)
+      ? garage.ownedTitles.map(t => `• ${t}`).join('\n')
+      : "None owned";
 
     // Cars list
     const carList = garage.cars.length
@@ -579,6 +563,8 @@ if (interaction.commandName === 'equiptitle') {
       .setDescription(
         `**Equipped Title:** ${titleDisplay}\n` +
         `**Equipped Theme:** ${equippedTheme}\n\n` +
+        `**Owned Themes:**\n${ownedThemes}\n\n` +
+        `**Owned Titles:**\n${ownedTitles}\n\n` +
         `**Your Cars:**\n${carList}`
       )
       .setFooter({ text: themeDesign.description });
