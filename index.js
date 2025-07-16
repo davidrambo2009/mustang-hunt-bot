@@ -141,12 +141,24 @@ function renderGaragePage(viewerId, garage, globalCount, pageIndex, garageOwnerU
   if (pageIndex > pages.length - 1) pageIndex = pages.length - 1;
 
   if (!pages.length || !pages[pageIndex]) {
+    // Use visuals even if empty
+    const equippedTheme = garage.equippedTheme || "Garage Theme: Plain White";
+    const equippedTitle = garage.equippedTitle || "None";
+    const themeDesign = garageVisuals.themes[equippedTheme] || garageVisuals.themes["Garage Theme: Plain White"];
+    const titleDesign = garageVisuals.titles[equippedTitle] || {};
+    const titleDisplay = titleDesign.emoji ? `${titleDesign.emoji} ${equippedTitle}` : equippedTitle;
+
     const embed = new EmbedBuilder()
-      .setTitle(viewerId === garageOwnerId
-        ? `🚗 Your Garage (0 cars)`
-        : `🚗 ${garageOwnerUser.username}'s Garage`)
-      .setDescription('No cars found.')
-      .setColor(0x00BFFF);
+      .setTitle(`${themeDesign.emoji} ${viewerId === garageOwnerId
+        ? `Your Garage (0 cars)`
+        : `${garageOwnerUser.username}'s Garage`}`)
+      .setDescription(
+        `**Equipped Title:** ${titleDisplay}\n` +
+        `**Equipped Theme:** ${equippedTheme}\n\n` +
+        'No cars found.'
+      )
+      .setColor(themeDesign.color)
+      .setFooter({ text: themeDesign.description });
     return { embed, components: [] };
   }
 
@@ -166,6 +178,7 @@ function renderGaragePage(viewerId, garage, globalCount, pageIndex, garageOwnerU
     };
   });
 
+  // Car grouping by rarity
   const grouped = {};
   for (const rarity of rarityOrder) grouped[rarity] = [];
   for (const car of carsOnPage) {
@@ -190,13 +203,26 @@ function renderGaragePage(viewerId, garage, globalCount, pageIndex, garageOwnerU
   }
   list = list.trim();
 
-  const embed = new EmbedBuilder()
-    .setTitle(viewerId === garageOwnerId
-      ? `🚗 Your Garage (${garage.cars.length} cars) - Page ${pageIndex + 1}/${pages.length}`
-      : `🚗 ${garageOwnerUser.username}'s Garage - Page ${pageIndex + 1}/${pages.length}`)
-    .setDescription(list.length ? list : 'No cars found.')
-    .setColor(0x00BFFF);
+  // Patch: Use visuals for color/title/footer
+  const equippedTheme = garage.equippedTheme || "Garage Theme: Plain White";
+  const equippedTitle = garage.equippedTitle || "None";
+  const themeDesign = garageVisuals.themes[equippedTheme] || garageVisuals.themes["Garage Theme: Plain White"];
+  const titleDesign = garageVisuals.titles[equippedTitle] || {};
+  const titleDisplay = titleDesign.emoji ? `${titleDesign.emoji} ${equippedTitle}` : equippedTitle;
 
+  const embed = new EmbedBuilder()
+    .setTitle(`${themeDesign.emoji} ${viewerId === garageOwnerId
+      ? `Your Garage (${garage.cars.length} cars) - Page ${pageIndex + 1}/${pages.length}`
+      : `${garageOwnerUser.username}'s Garage - Page ${pageIndex + 1}/${pages.length}`}`)
+    .setColor(themeDesign.color)
+    .setDescription(
+      `**Equipped Title:** ${titleDisplay}\n` +
+      `**Equipped Theme:** ${equippedTheme}\n\n` +
+      (list.length ? list : 'No cars found.')
+    )
+    .setFooter({ text: themeDesign.description });
+
+  // Pagination buttons
   const row = new ActionRowBuilder();
   if (pageIndex > 0)
     row.addComponents(
@@ -215,7 +241,6 @@ function renderGaragePage(viewerId, garage, globalCount, pageIndex, garageOwnerU
 
   return { embed, components: row.components.length ? [row] : [] };
 }
-
 let dropState = { activeDrop: null, dropTimeout: null };
 const claimingUsers = new Set();
 const claimCooldowns = new Map();
