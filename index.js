@@ -548,7 +548,7 @@ const pageIndex = 0;
 const userObj = await client.users.fetch(target.id);
 
 const { embed, components } = renderGaragePage(
-  user.id, garage, globalCount, pageIndex, userObj, target.id, cars
+  user.id, garage, globalCount, pageIndex, userObj, target.id, cars, garageVisuals
 );
 
 await interaction.reply({ embeds: [embed], components, flags: 64 });
@@ -669,8 +669,8 @@ if (interaction.customId === 'equiptitle_select') {
         const globalCount = calculateGlobalCounts(all);
         const userObj = await client.users.fetch(garageOwnerId);
         const { embed, components } = renderGaragePage(
-          interaction.user.id, garage, globalCount, pageIndex, userObj, garageOwnerId, cars
-        );
+  interaction.user.id, garage, globalCount, pageIndex, userObj, garageOwnerId, cars, garageVisuals
+);
 
         await interaction.update({ embeds: [embed], components, flags: 64 });
       } catch (error) {
