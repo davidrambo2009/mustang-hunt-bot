@@ -14,6 +14,7 @@ const givetokensCmd = require('./commands/givetokens.js');
 const equipThemeCmd = require('./commands/equiptheme.js');
 const equipTitleCmd = require('./commands/equiptitle.js');
 const garageVisuals = require('./models/garageVisuals');
+const { grantBoosterRewards } = require('./data/boosterRewards');
 const {
   Client, GatewayIntentBits, EmbedBuilder,
   SlashCommandBuilder, PermissionFlagsBits, ActionRowBuilder,
@@ -565,6 +566,17 @@ if (interaction.commandName === 'equiptitle') {
     const target = options.getUser('user') || user;
     const garage = await Garage.findOne({ userId: target.id });
     if (!garage || garage.cars.length === 0) return interaction.reply({ content: '🚫 Garage is empty.', flags: 64 });
+
+    // --- BOOSTER REWARDS LOGIC ---
+    const boosterRoleId = '1392720458960339005';
+    const guild = interaction.guild;
+    const result = await grantBoosterRewards(target.id, guild, boosterRoleId);
+    if (result.granted && result.changes.length) {
+      // You can notify the user, or just let them discover their restored rewards!
+      // Optionally send a message like:
+      // await interaction.followUp({ content: `Booster rewards restored: ${result.changes.join(', ')}`, flags: 64 });
+    }
+    // --- END BOOSTER REWARDS LOGIC ---
 
     garage.cars = garage.cars.filter(c => c && c.name);
 
