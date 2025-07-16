@@ -65,6 +65,7 @@ const cars = [
   // Special/Limited/Event Cars
   { name: '2022 Mustang NASCAR Cup Car', rarity: 'LIMITED EVENT', rarityLevel: 0, droppable: false },
   { name: "GT40 (Le Mans '66)", rarity: 'LIMITED EVENT', rarityLevel: 0, droppable: false },
+  { name: "Nitro Mustang", rarity: "Epic", rarityLevel: 0, droppable: false },
 
   // ??? Rarity
   { name: "Diamond Edition 1965 Shelby Cobra", rarity: "???", rarityLevel: 16, droppable: true }
