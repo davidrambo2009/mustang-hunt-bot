@@ -26,17 +26,20 @@ async function grantBoosterRewards(userId, guild, boosterRoleId) {
   // Fetch garage
   let garage = await Garage.findOne({ userId });
   if (!garage) {
-    // If garage doesn't exist, create a new one (customize default values if needed)
     garage = new Garage({
       userId,
       ownedThemes: [],
       ownedTitles: [],
       cars: [],
-      // ...other fields
     });
   }
 
   let changes = [];
+
+  // Array safety
+  garage.ownedThemes = Array.isArray(garage.ownedThemes) ? garage.ownedThemes : [];
+  garage.ownedTitles = Array.isArray(garage.ownedTitles) ? garage.ownedTitles : [];
+  garage.cars = Array.isArray(garage.cars) ? garage.cars : [];
 
   // Always restore theme if missing
   if (!garage.ownedThemes.includes(BOOSTER_THEME)) {
@@ -53,7 +56,7 @@ async function grantBoosterRewards(userId, guild, boosterRoleId) {
   // Only give the car if not currently owned
   const ownsBoosterCar = garage.cars.some(car => car.name === BOOSTER_CAR);
   if (!ownsBoosterCar) {
-    garage.cars.push({ name: BOOSTER_CAR, serial: 1 }); // Add serial logic if needed
+    garage.cars.push({ name: BOOSTER_CAR, serial: 1 });
     changes.push("car");
   }
 
