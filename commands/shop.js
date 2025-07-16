@@ -3,11 +3,12 @@ const {
   EmbedBuilder, 
   ActionRowBuilder, 
   ButtonBuilder, 
-  ButtonStyle 
+  ButtonStyle, 
+  PermissionFlagsBits 
 } = require('discord.js');
 const { createShop } = require('../shop/shopManager');
+const Garage = require('../models/garage');
 
-// Add rarity emojis
 const rarityEmojis = {
   'Common': '⚪',
   'Uncommon': '🟩',
@@ -24,8 +25,6 @@ const rarityEmojis = {
 function formatRarity(rarity) {
   return `${rarityEmojis[rarity] || ''} ${rarity}`;
 }
-
-// Returns a string like "Shop refresh in 17 hours" or "Shop refresh in 23 minutes"
 function getShopRefreshText() {
   const now = new Date();
   const nextReset = new Date(now);
@@ -37,8 +36,6 @@ function getShopRefreshText() {
   if (minutes > 0) return `Shop refreshes in ${minutes} minute${minutes !== 1 ? 's' : ''}`;
   return 'Shop refreshes in less than a minute!';
 }
-
-// Format event expiry for ET (Eastern Time)
 function formatExpiryET(isoString) {
   try {
     const date = new Date(isoString);
@@ -52,8 +49,6 @@ function formatExpiryET(isoString) {
     return '';
   }
 }
-
-// Helper to make shop embed
 function getShopEmbed(shop) {
   const featuredText = shop.featured.length
     ? shop.featured.map(item => {
@@ -64,20 +59,17 @@ function getShopEmbed(shop) {
         return line;
       }).join('\n')
     : 'No featured items today!';
-
   const dailyText = shop.daily.length
     ? shop.daily.map(item =>
         `• **${item.name}** [${formatRarity(item.rarity)}] — \`${item.price} coins\``
       ).join('\n')
     : 'No daily items today!';
-
   let footer = getShopRefreshText();
   const expiring = shop.featured.filter(item => item.expiresAt);
   if (expiring.length) {
     const soonest = expiring.map(i => i.expiresAt).sort()[0];
     footer += ` | LIMITED EVENT items available until ${formatExpiryET(soonest)}`;
   }
-
   return new EmbedBuilder()
     .setTitle('🛒 Mustang Hunt Shop')
     .setDescription('Check out today’s featured and daily deals!\nClick the Buy button for the item you want!')
@@ -86,11 +78,8 @@ function getShopEmbed(shop) {
       { name: '🌟 Featured Items 🌟', value: featuredText },
       { name: '🛒 Daily Items 🛒', value: dailyText }
     )
-    //.setThumbnail('https://cdn.discordapp.com/icons/yourguildid/shopicon.png') // Optional
     .setFooter({ text: footer });
 }
-
-// Helper to make buttons for shop items
 function getShopButtons(shop) {
   const allShopItems = [
     ...shop.featured.map((item, idx) => ({
@@ -104,7 +93,6 @@ function getShopButtons(shop) {
       sectionIdx: idx
     }))
   ];
-  // Split buttons into chunks of 5 (max per row)
   const components = [];
   for (let i = 0; i < allShopItems.length; i += 5) {
     const row = new ActionRowBuilder();
@@ -119,6 +107,31 @@ function getShopButtons(shop) {
     components.push(row);
   }
   return components;
+}
+
+// Helper functions for coins/inventory
+async function getUserCoins(userId) {
+  let garage = await Garage.findOne({ userId });
+  return garage?.coins ?? 0;
+}
+async function subtractUserCoins(userId, amount) {
+  let garage = await Garage.findOne({ userId });
+  if (!garage) return false;
+  if (garage.coins < amount) return false;
+  garage.coins -= amount;
+  await garage.save();
+  return true;
+}
+async function giveUserItem(userId, item) {
+  let garage = await Garage.findOne({ userId });
+  if (!garage) {
+    garage = new Garage({ userId, cars: [], coins: 0 });
+  }
+  // Serial logic: find global count for this car name
+  const allGarages = await Garage.find();
+  const globalCount = allGarages.reduce((sum, g) => sum + g.cars.filter(c => c.name === item.name).length, 0);
+  garage.cars.push({ name: item.name, serial: globalCount + 1 });
+  await garage.save();
 }
 
 module.exports = {
@@ -146,7 +159,7 @@ module.exports = {
         return;
       }
 
-      // Confirmation buttons
+      // Show confirmation
       const confirmRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setCustomId(`confirmbuy_${section}_${sectionIdx}`)
@@ -176,15 +189,16 @@ module.exports = {
         return;
       }
 
-      // --- TODO: Add your coin-check and inventory logic here ---
-      // Example:
-      // const userCoins = await getUserCoins(interaction.user.id);
-      // if (userCoins < item.price) {
-      //   await interaction.reply({ content: "You don't have enough coins!", flags: 64 });
-      //   return;
-      // }
-      // await subtractUserCoins(interaction.user.id, item.price);
-      // await giveUserItem(interaction.user.id, item);
+      // COIN CHECK
+      const coins = await getUserCoins(interaction.user.id);
+      if (coins < item.price) {
+        await interaction.reply({ content: "You don't have enough coins!", flags: 64 });
+        return;
+      }
+
+      // DEDUCT COINS & GIVE ITEM
+      await subtractUserCoins(interaction.user.id, item.price);
+      await giveUserItem(interaction.user.id, item);
 
       await interaction.reply({ content: `You bought **${item.name}** for **${item.price}** coins!`, flags: 64 });
       return;
