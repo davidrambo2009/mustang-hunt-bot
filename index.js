@@ -11,6 +11,8 @@ const { addTokens } = require('./data/tokenHelper.js');
 const tokensCmd = require('./commands/tokens.js');
 const shopCmd = require('./commands/shop.js');
 const givetokensCmd = require('./commands/givetokens.js');
+const equipThemeCmd = require('./commands/equiptheme.js');
+const equipTitleCmd = require('./commands/equiptitle.js');
 const {
   Client, GatewayIntentBits, EmbedBuilder,
   SlashCommandBuilder, PermissionFlagsBits, ActionRowBuilder,
@@ -334,6 +336,8 @@ client.once('ready', async () => {
     tokensCmd.data,
     shopCmd.data,
     givetokensCmd.data,
+    equipThemeCmd.data,
+    equipTitleCmd.data
   ].map(cmd => cmd.toJSON());
 
   try {
@@ -427,6 +431,14 @@ client.on('interactionCreate', async (interaction) => {
       }
       if (commandName === 'givetokens') {
   return givetokensCmd.execute(interaction);
+}
+      if (interaction.commandName === 'equiptheme') {
+  await equipThemeCmd.execute(interaction);
+  return;
+}
+if (interaction.commandName === 'equiptitle') {
+  await equipTitleCmd.execute(interaction);
+  return;
 }
 
       if (commandName === 'claim') {
@@ -598,6 +610,14 @@ client.on('interactionCreate', async (interaction) => {
       await trade.handleChooseOfferMenu(interaction, TRADEOFFERS_CHANNEL_ID);
       return;
     }
+    if (interaction.customId === 'equiptheme_select') {
+  await equipThemeCmd.handleSelect(interaction);
+  return;
+}
+if (interaction.customId === 'equiptitle_select') {
+  await equipTitleCmd.handleSelect(interaction);
+  return;
+}
     if (interaction.isButton() && (
       interaction.customId.startsWith('acceptOffer:') ||
       interaction.customId.startsWith('declineOffer:') ||
