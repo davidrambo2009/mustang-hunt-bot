@@ -52,7 +52,7 @@ function formatExpiryET(isoString) {
 function getShopEmbed(shop) {
   const featuredText = shop.featured.length
     ? shop.featured.map(item => {
-        let line = `• **${item.name}** [${formatRarity(item.rarity)}] — \`${item.price} coins\``;
+        let line = `• **${item.name}** [${formatRarity(item.rarity)}] — \`${item.price} Hunt Tokens\``;
         if (item.expiresAt) {
           line += ` _(Available until ${formatExpiryET(item.expiresAt)})_`;
         }
@@ -61,7 +61,7 @@ function getShopEmbed(shop) {
     : 'No featured items today!';
   const dailyText = shop.daily.length
     ? shop.daily.map(item =>
-        `• **${item.name}** [${formatRarity(item.rarity)}] — \`${item.price} coins\``
+        `• **${item.name}** [${formatRarity(item.rarity)}] — \`${item.price} Hunt Tokens\``
       ).join('\n')
     : 'No daily items today!';
   let footer = getShopRefreshText();
@@ -109,23 +109,23 @@ function getShopButtons(shop) {
   return components;
 }
 
-// Helper functions for coins/inventory
-async function getUserCoins(userId) {
+// Helper functions for Hunt Tokens/inventory
+async function getUserTokens(userId) {
   let garage = await Garage.findOne({ userId });
-  return garage?.coins ?? 0;
+  return garage?.tokens ?? 0;
 }
-async function subtractUserCoins(userId, amount) {
+async function subtractUserTokens(userId, amount) {
   let garage = await Garage.findOne({ userId });
   if (!garage) return false;
-  if (garage.coins < amount) return false;
-  garage.coins -= amount;
+  if (garage.tokens < amount) return false;
+  garage.tokens -= amount;
   await garage.save();
   return true;
 }
 async function giveUserItem(userId, item) {
   let garage = await Garage.findOne({ userId });
   if (!garage) {
-    garage = new Garage({ userId, cars: [], coins: 0 });
+    garage = new Garage({ userId, cars: [], tokens: 0 });
   }
   // Serial logic: find global count for this car name
   const allGarages = await Garage.find();
@@ -163,7 +163,7 @@ module.exports = {
       const confirmRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setCustomId(`confirmbuy_${section}_${sectionIdx}`)
-          .setLabel(`Yes, buy for ${item.price} coins`)
+          .setLabel(`Yes, buy for ${item.price} Hunt Tokens`)
           .setStyle(ButtonStyle.Success),
         new ButtonBuilder()
           .setCustomId('cancelbuy')
@@ -171,7 +171,7 @@ module.exports = {
           .setStyle(ButtonStyle.Secondary)
       );
       await interaction.reply({
-        content: `Are you sure you want to buy **${item.name}** for **${item.price}** coins?`,
+        content: `Are you sure you want to buy **${item.name}** for **${item.price}** Hunt Tokens?`,
         components: [confirmRow],
         flags: 64
       });
@@ -189,18 +189,18 @@ module.exports = {
         return;
       }
 
-      // COIN CHECK
-      const coins = await getUserCoins(interaction.user.id);
-      if (coins < item.price) {
-        await interaction.reply({ content: "You don't have enough coins!", flags: 64 });
+      // HUNT TOKEN CHECK
+      const tokens = await getUserTokens(interaction.user.id);
+      if (tokens < item.price) {
+        await interaction.reply({ content: "You don't have enough Hunt Tokens!", flags: 64 });
         return;
       }
 
-      // DEDUCT COINS & GIVE ITEM
-      await subtractUserCoins(interaction.user.id, item.price);
+      // DEDUCT HUNT TOKENS & GIVE ITEM
+      await subtractUserTokens(interaction.user.id, item.price);
       await giveUserItem(interaction.user.id, item);
 
-      await interaction.reply({ content: `You bought **${item.name}** for **${item.price}** coins!`, flags: 64 });
+      await interaction.reply({ content: `You bought **${item.name}** for **${item.price}** Hunt Tokens!`, flags: 64 });
       return;
     }
     // Cancel buy
