@@ -10,6 +10,7 @@ const removecarCmd = require('./commands/removecar.js');
 const { addTokens } = require('./data/tokenHelper.js');
 const tokensCmd = require('./commands/tokens.js');
 const shopCmd = require('./commands/shop.js');
+const giveCoinsCmd = require('./commands/givecoins.js');
 const {
   Client, GatewayIntentBits, EmbedBuilder,
   SlashCommandBuilder, PermissionFlagsBits, ActionRowBuilder,
@@ -332,6 +333,7 @@ client.once('ready', async () => {
     carinfoCmd.data,
     tokensCmd.data,
     shopCmd.data,
+    giveCoinsCmd.data,
   ].map(cmd => cmd.toJSON());
 
   try {
@@ -423,6 +425,9 @@ client.on('interactionCreate', async (interaction) => {
       if (commandName === 'shop') {
         return shopCmd.execute(interaction);
       }
+      if (commandName === 'givecoins') {
+  return giveCoinsCmd.execute(interaction);
+}
 
       if (commandName === 'claim') {
         const now = Date.now();
