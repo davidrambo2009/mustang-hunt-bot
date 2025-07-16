@@ -348,6 +348,20 @@ client.once('ready', async () => {
 
 client.on('interactionCreate', async (interaction) => {
   try {
+    // --- Shop Button Handling ---
+    if (
+      interaction.isButton() &&
+      (
+        interaction.customId.startsWith('buy_') ||
+        interaction.customId.startsWith('confirmbuy_') ||
+        interaction.customId === 'cancelbuy'
+      )
+    ) {
+      await shopCmd.handleButton(interaction);
+      return;
+    }
+    // --- End Shop Button Handling ---
+
     if (interaction.isChatInputCommand()) {
       const { commandName, user, channel, options, member } = interaction;
       const userId = user.id;
@@ -398,17 +412,17 @@ client.on('interactionCreate', async (interaction) => {
       }
 
       if (commandName === 'carinfo') {
-  return carinfoCmd.execute(interaction);
-}
-if (commandName === 'removecar') {
-  return removecarCmd.execute(interaction);
-}
-if (commandName === 'tokens') {
-  return tokensCmd.execute(interaction);
-}
+        return carinfoCmd.execute(interaction);
+      }
+      if (commandName === 'removecar') {
+        return removecarCmd.execute(interaction);
+      }
+      if (commandName === 'tokens') {
+        return tokensCmd.execute(interaction);
+      }
       if (commandName === 'shop') {
-  return shopCmd.execute(interaction);
-}
+        return shopCmd.execute(interaction);
+      }
 
       if (commandName === 'claim') {
         const now = Date.now();
@@ -461,16 +475,16 @@ if (commandName === 'tokens') {
             await channel.send(`🎉 ${user.username} unlocked **${nascarUnlockCar}**!`);
           }
 
-         await garage.save();
+          await garage.save();
 
-// Award Hunt Tokens for claiming a car
-const boosterRoleId = '1392720458960339005';
-const isBoosting = member.roles.cache.has(boosterRoleId);
-await addTokens(userId, 1, isBoosting);
+          // Award Hunt Tokens for claiming a car
+          const boosterRoleId = '1392720458960339005';
+          const isBoosting = member.roles.cache.has(boosterRoleId);
+          await addTokens(userId, 1, isBoosting);
 
-dropState.activeDrop = null;
-scheduleNextDrop(channel);
-await interaction.reply({ content: '✅ You claimed the car!', flags: 64 });
+          dropState.activeDrop = null;
+          scheduleNextDrop(channel);
+          await interaction.reply({ content: '✅ You claimed the car!', flags: 64 });
         } catch (error) {
           log(`DB ERROR in /claim: ${error}`);
           if (!interaction.replied && !interaction.deferred) {
