@@ -1,4 +1,4 @@
-const Garage = require('./models/garage'); // Update this path if your model is elsewhere
+const Garage = require('../models/garage'); // Update this path if your model is elsewhere
 
 const BOOSTER_CAR = "Nitro Mustang";
 
