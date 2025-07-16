@@ -13,6 +13,7 @@ const shopCmd = require('./commands/shop.js');
 const givetokensCmd = require('./commands/givetokens.js');
 const equipThemeCmd = require('./commands/equiptheme.js');
 const equipTitleCmd = require('./commands/equiptitle.js');
+const garageVisuals = require('./models/garageVisuals');
 const {
   Client, GatewayIntentBits, EmbedBuilder,
   SlashCommandBuilder, PermissionFlagsBits, ActionRowBuilder,
@@ -527,27 +528,45 @@ if (interaction.commandName === 'equiptitle') {
       }
 
       if (commandName === 'garage') {
-        if (channel.id !== GARAGE_CHANNEL_ID) return interaction.reply({ content: '❌ Use /garage in the garage channel.', flags: 64 });
-        try {
-          const target = options.getUser('user') || user;
-          const garage = await Garage.findOne({ userId: target.id });
-          if (!garage || garage.cars.length === 0) return interaction.reply({ content: '🚫 Garage is empty.', flags: 64 });
+  if (channel.id !== GARAGE_CHANNEL_ID) return interaction.reply({ content: '❌ Use /garage in the garage channel.', flags: 64 });
+  try {
+    const target = options.getUser('user') || user;
+    const garage = await Garage.findOne({ userId: target.id });
+    if (!garage || garage.cars.length === 0) return interaction.reply({ content: '🚫 Garage is empty.', flags: 64 });
 
-          garage.cars = garage.cars.filter(c => c && c.name);
+    garage.cars = garage.cars.filter(c => c && c.name);
 
-          const all = await Garage.find();
-          const globalCount = calculateGlobalCounts(all);
-          const { embed, components } = renderGaragePage(user.id, garage, globalCount, 0, target, target.id, cars);
+    // --- NEW: Visuals for theme/title ---
+    const equippedTheme = garage.equippedTheme || "Garage Theme: Plain White";
+    const equippedTitle = garage.equippedTitle || "None";
+    const themeDesign = garageVisuals.themes[equippedTheme] || garageVisuals.themes["Garage Theme: Plain White"];
+    const titleDesign = garageVisuals.titles[equippedTitle] || {};
+    const titleDisplay = titleDesign.emoji ? `${titleDesign.emoji} ${equippedTitle}` : equippedTitle;
 
-          await interaction.reply({ embeds: [embed], components, flags: 64 });
-        } catch (error) {
-          log(`DB ERROR in /garage: ${error}`);
-          if (!interaction.replied && !interaction.deferred) {
-            await interaction.reply({ content: '❌ An error occurred. Please try again later.', flags: 64 });
-          }
-        }
-        return;
-      }
+    // Cars list
+    const carList = garage.cars.length
+      ? garage.cars.map(c => `• ${c.name} (#${c.serial})`).join('\n')
+      : "You don't own any cars yet!";
+
+    const embed = new EmbedBuilder()
+      .setTitle(`${themeDesign.emoji} ${target.id === user.id ? "Your Garage" : `${target.username}'s Garage`}`)
+      .setColor(themeDesign.color)
+      .setDescription(
+        `**Equipped Title:** ${titleDisplay}\n` +
+        `**Equipped Theme:** ${equippedTheme}\n\n` +
+        `**Your Cars:**\n${carList}`
+      )
+      .setFooter({ text: themeDesign.description });
+
+    await interaction.reply({ embeds: [embed], flags: 64 });
+  } catch (error) {
+    log(`DB ERROR in /garage: ${error}`);
+    if (!interaction.replied && !interaction.deferred) {
+      await interaction.reply({ content: '❌ An error occurred. Please try again later.', flags: 64 });
+    }
+  }
+  return;
+}
 
       if (commandName === 'resetgarage') {
         if (!member.permissions.has(PermissionFlagsBits.Administrator)) return interaction.reply({ content: '❌ No permission.', flags: 64 });
