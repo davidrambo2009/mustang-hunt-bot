@@ -53,6 +53,8 @@ function getShopEmbed(shop) {
   const featuredText = shop.featured.length
     ? shop.featured.map(item => {
         let line = `• **${item.name}** [${formatRarity(item.rarity)}] — \`${item.price} Hunt Tokens\``;
+        if (item.type === 'theme') line += ' _(Garage Theme)_';
+        if (item.type === 'title') line += ' _(Garage Title)_';
         if (item.expiresAt) {
           line += ` _(Available until ${formatExpiryET(item.expiresAt)})_`;
         }
@@ -60,9 +62,12 @@ function getShopEmbed(shop) {
       }).join('\n')
     : 'No featured items today!';
   const dailyText = shop.daily.length
-    ? shop.daily.map(item =>
-        `• **${item.name}** [${formatRarity(item.rarity)}] — \`${item.price} Hunt Tokens\``
-      ).join('\n')
+    ? shop.daily.map(item => {
+        let line = `• **${item.name}** [${formatRarity(item.rarity)}] — \`${item.price} Hunt Tokens\``;
+        if (item.type === 'theme') line += ' _(Garage Theme)_';
+        if (item.type === 'title') line += ' _(Garage Title)_';
+        return line;
+      }).join('\n')
     : 'No daily items today!';
   let footer = getShopRefreshText();
   const expiring = shop.featured.filter(item => item.expiresAt);
@@ -122,15 +127,35 @@ async function subtractUserTokens(userId, amount) {
   await garage.save();
   return true;
 }
+
+// Give item (car, theme, or title) to user
 async function giveUserItem(userId, item) {
   let garage = await Garage.findOne({ userId });
   if (!garage) {
-    garage = new Garage({ userId, cars: [], tokens: 0 });
+    garage = new Garage({ userId, cars: [], tokens: 0, ownedThemes: [], ownedTitles: [] });
   }
-  // Serial logic: find global count for this car name
-  const allGarages = await Garage.find();
-  const globalCount = allGarages.reduce((sum, g) => sum + g.cars.filter(c => c.name === item.name).length, 0);
-  garage.cars.push({ name: item.name, serial: globalCount + 1 });
+  // Theme
+  if (item.type === 'theme') {
+    if (!garage.ownedThemes) garage.ownedThemes = [];
+    if (!garage.ownedThemes.includes(item.name)) {
+      garage.ownedThemes.push(item.name);
+    }
+  }
+  // Title
+  else if (item.type === 'title') {
+    if (!garage.ownedTitles) garage.ownedTitles = [];
+    if (!garage.ownedTitles.includes(item.name)) {
+      garage.ownedTitles.push(item.name);
+    }
+  }
+  // Car
+  else {
+    const allGarages = await Garage.find();
+    const globalCount = allGarages.reduce(
+      (sum, g) => sum + g.cars.filter(c => c.name === item.name).length, 0
+    );
+    garage.cars.push({ name: item.name, serial: globalCount + 1 });
+  }
   await garage.save();
 }
 
@@ -200,7 +225,12 @@ module.exports = {
       await subtractUserTokens(interaction.user.id, item.price);
       await giveUserItem(interaction.user.id, item);
 
-      await interaction.reply({ content: `You bought **${item.name}** for **${item.price}** Hunt Tokens!`, flags: 64 });
+      let itemTypeText = '';
+      if (item.type === 'theme') itemTypeText = ' (Garage Theme)';
+      if (item.type === 'title') itemTypeText = ' (Garage Title)';
+      if (item.type === 'car') itemTypeText = ' (Car)';
+
+      await interaction.reply({ content: `You bought **${item.name}**${itemTypeText} for **${item.price}** Hunt Tokens!`, flags: 64 });
       return;
     }
     // Cancel buy
