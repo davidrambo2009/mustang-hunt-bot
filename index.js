@@ -134,42 +134,25 @@ function calculateGlobalCounts(garages) {
   return globalCount;
 }
 
-function renderGaragePage(viewerId, garage, globalCount, pageIndex, garageOwnerUser, garageOwnerId, carsMeta) {
+function renderGaragePage(viewerId, garage, globalCount, pageIndex, garageOwnerUser, garageOwnerId, carsMeta, garageVisuals) {
   const pages = chunkArray(garage.cars, 10);
 
   if (pageIndex < 0) pageIndex = 0;
   if (pageIndex > pages.length - 1) pageIndex = pages.length - 1;
 
-  // Get visuals
+  // Get visuals for equipped theme/title
   const equippedTheme = garage.equippedTheme || "Garage Theme: Plain White";
-  const equippedTitle = garage.equippedTitle || "None";
-  const themeDesign = garageVisuals.themes?.[equippedTheme] || garageVisuals.themes?.["Garage Theme: Plain White"] || {};
-  const titleDesign = garageVisuals.titles?.[equippedTitle] || {};
-  const titleDisplay = titleDesign.emoji ? `${titleDesign.emoji} ${equippedTitle}` : equippedTitle;
-
-  // Owned lists
-  const ownedThemes = (garage.ownedThemes && garage.ownedThemes.length)
-    ? garage.ownedThemes.map(t => `• ${t}`).join('\n')
-    : "None owned";
-
-  const ownedTitles = (garage.ownedTitles && garage.ownedTitles.length)
-    ? garage.ownedTitles.map(t => `• ${t}`).join('\n')
-    : "None owned";
+  const themeDesign = garageVisuals?.themes?.[equippedTheme] || garageVisuals?.themes?.["Garage Theme: Plain White"] || {};
+  const embedColor = themeDesign.color || 0x00BFFF;
+  const embedEmoji = themeDesign.emoji || "🚗";
 
   if (!pages.length || !pages[pageIndex]) {
     const embed = new EmbedBuilder()
-      .setTitle(`${themeDesign.emoji || ""} ${viewerId === garageOwnerId
+      .setTitle(`${embedEmoji} ${viewerId === garageOwnerId
         ? `Your Garage (0 cars)`
         : `${garageOwnerUser.username}'s Garage`}`)
-      .setColor(themeDesign.color || 0x00BFFF)
-      .setDescription(
-        `**Equipped Title:** ${titleDisplay}\n` +
-        `**Equipped Theme:** ${equippedTheme}\n\n` +
-        `**Owned Themes:**\n${ownedThemes}\n\n` +
-        `**Owned Titles:**\n${ownedTitles}\n\n` +
-        'No cars found.'
-      )
-      .setFooter({ text: themeDesign.description || "" });
+      .setDescription('No cars found.')
+      .setColor(embedColor);
     return { embed, components: [] };
   }
 
@@ -189,7 +172,6 @@ function renderGaragePage(viewerId, garage, globalCount, pageIndex, garageOwnerU
     };
   });
 
-  // Car grouping by rarity
   const grouped = {};
   for (const rarity of rarityOrder) grouped[rarity] = [];
   for (const car of carsOnPage) {
@@ -215,20 +197,12 @@ function renderGaragePage(viewerId, garage, globalCount, pageIndex, garageOwnerU
   list = list.trim();
 
   const embed = new EmbedBuilder()
-    .setTitle(`${themeDesign.emoji || ""} ${viewerId === garageOwnerId
+    .setTitle(`${embedEmoji} ${viewerId === garageOwnerId
       ? `Your Garage (${garage.cars.length} cars) - Page ${pageIndex + 1}/${pages.length}`
       : `${garageOwnerUser.username}'s Garage - Page ${pageIndex + 1}/${pages.length}`}`)
-    .setColor(themeDesign.color || 0x00BFFF)
-    .setDescription(
-      `**Equipped Title:** ${titleDisplay}\n` +
-      `**Equipped Theme:** ${equippedTheme}\n\n` +
-      `**Owned Themes:**\n${ownedThemes}\n\n` +
-      `**Owned Titles:**\n${ownedTitles}\n\n` +
-      (list.length ? list : 'No cars found.')
-    )
-    .setFooter({ text: themeDesign.description || "" });
+    .setDescription(list.length ? list : 'No cars found.')
+    .setColor(embedColor);
 
-  // Pagination buttons
   const row = new ActionRowBuilder();
   if (pageIndex > 0)
     row.addComponents(
