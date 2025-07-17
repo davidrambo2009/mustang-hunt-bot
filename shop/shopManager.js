@@ -71,13 +71,18 @@ function getDailyShop(count = 4, excludeNames = []) {
 
 /**
  * Create the shop object for display
+ * (Merges event featured items with full details from allItems.js)
  */
 function createShop() {
-  const eventFeatured = getEventFeaturedItems();
+  // Merge event featured items with full details from allItems.js
+  const eventFeatured = getEventFeaturedItems().map(eventItem => {
+    const fullItem = allItems.find(i => i.name === eventItem.name);
+    return fullItem ? { ...fullItem, ...eventItem } : eventItem;
+  });
   const eventNames = eventFeatured.map(item => item.name);
   const regularFeatured = getRegularFeaturedItems(eventNames);
 
-  // Decide how many featured slots you want; here we combine both lists
+  // Combine both lists for featured
   const featured = [...eventFeatured, ...regularFeatured];
 
   // Prevent any daily item from duplicating a featured item
