@@ -1,12 +1,14 @@
 [
   {
     "name": "GT40 (Le Mans '66)",
+    "type": "car",
     "rarity": "LIMITED EVENT",
     "price": 200,
     "expiresAt": "2025-08-16T04:00:00Z"
   },
   {
     "name": "Garage Theme: Party Night",
+    "type": "theme",
     "rarity": "LIMITED EVENT",
     "price": 180,
     "expiresAt": "2025-08-16T04:00:00Z"
